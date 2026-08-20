@@ -48,13 +48,13 @@ final class AndroidAdbWatcher {
     }
 
     private static func firstDeviceSerial(adbPath: String) -> String? {
-        guard let output = run(adbPath, ["devices"]),
+        guard let output = run(adbPath, ["devices", "-l"]),
               let header = output.range(of: "List of devices attached") else { return nil }
         for line in output[header.upperBound...].split(separator: "\n") {
-            let fields = line.split(separator: "\t")
-            if fields.count == 2, fields[1] == "device" {
-                return String(fields[0])
-            }
+            let fields = line.split(separator: " ")
+            guard fields.count >= 2, fields[1] == "device",
+                  fields.contains(where: { $0.hasPrefix("usb:") }) else { continue }
+            return String(fields[0])
         }
         return nil
     }
