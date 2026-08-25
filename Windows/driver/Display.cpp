@@ -65,10 +65,68 @@ OpenDisplayIddCreateDisplay(
     _In_ POPENDISPLAY_DISPLAY_PARAMS Params
 )
 {
-    UNREFERENCED_PARAMETER(Device);
-    UNREFERENCED_PARAMETER(Params);
-    // Implemented by T5.
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_CONTEXT deviceContext = DeviceGetContext(Device);
+
+    if (!deviceContext->AdapterInitialized)
+    {
+        // The IddCx adapter hasn't finished EvtDeviceD0Entry /
+        // IddCxAdapterInitAsync yet; windows-core must not race ahead of
+        // driver load, per the design's driver-loads-first mitigation
+        // (WSEND-14).
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    if (deviceContext->MonitorCreated)
+    {
+        // P1's single-device constraint (spec.md Edge Cases) means there
+        // is never a second monitor to create; a rotation/resolution
+        // change goes through IOCTL_OPENDISPLAY_RESIZE_DISPLAY (T6)
+        // instead of a second CREATE.
+        return STATUS_DEVICE_ALREADY_ATTACHED;
+    }
+
+    IDDCX_MONITOR_INFO monitorInfo = {};
+    monitorInfo.Size = sizeof(monitorInfo);
+    monitorInfo.MonitorType = IDDCX_MONITOR_TYPE_ID_MONITOR_INTERFACE;
+    monitorInfo.ConnectorIndex = 0;
+    monitorInfo.MonitorContainerId = GUID_NULL;
+    // No physical EDID: modes are supplied programmatically from Params
+    // (via EvtIddCxMonitorGetDefaultDescriptionModes / QueryTargetModes
+    // in Device.cpp) rather than parsed from a monitor descriptor blob.
+    monitorInfo.MonitorDescription.Size = sizeof(IDDCX_MONITOR_DESCRIPTION);
+    monitorInfo.MonitorDescription.Type = IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
+    monitorInfo.MonitorDescription.DataSize = 0;
+    monitorInfo.MonitorDescription.pData = NULL;
+
+    IDARG_IN_MONITORCREATE monitorCreateIn = {};
+    monitorCreateIn.ObjectAttributes = WDF_NO_OBJECT_ATTRIBUTES;
+    monitorCreateIn.pMonitorInfo = &monitorInfo;
+
+    IDARG_OUT_MONITORCREATE monitorCreateOut = {};
+    NTSTATUS status = IddCxMonitorCreate(deviceContext->AdapterObject, &monitorCreateIn, &monitorCreateOut);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    // Record the requested resolution/refresh/scale before arrival: the
+    // GetDefaultDescriptionModes / QueryTargetModes callbacks (Device.cpp)
+    // read CurrentParams to advertise this exact mode, so it must be set
+    // before Windows can ask for it.
+    deviceContext->MonitorObject = monitorCreateOut.MonitorObject;
+    deviceContext->CurrentParams = *Params;
+    deviceContext->MonitorCreated = TRUE;
+
+    IDARG_OUT_MONITORARRIVAL monitorArrivalOut = {};
+    status = IddCxMonitorArrival(deviceContext->MonitorObject, &monitorArrivalOut);
+    if (!NT_SUCCESS(status))
+    {
+        // Roll back so a retried CREATE isn't blocked by a monitor that
+        // never actually became visible to Windows.
+        deviceContext->MonitorCreated = FALSE;
+    }
+
+    return status;
 }
 
 NTSTATUS

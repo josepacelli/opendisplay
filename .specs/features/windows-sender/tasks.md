@@ -244,11 +244,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] `IOCTL_CREATE_DISPLAY` creates a monitor visible in Windows Display Settings at the requested resolution/scale
-- [ ] Manual verification against a real Windows 11 machine, per `spec.md`'s WiFi story Independent Test (display appears, draggable)
+- [x] `IOCTL_CREATE_DISPLAY` creates a monitor visible in Windows Display Settings at the requested resolution/scale (implemented via `IddCxMonitorCreate`/`IddCxMonitorArrival`; verified by code inspection only)
+- [ ] Manual verification against a real Windows 11 machine, per `spec.md`'s WiFi story Independent Test (display appears, draggable) — **not performed, requires real Windows 11 + iOS hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
