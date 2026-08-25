@@ -34,6 +34,10 @@ pub mod wire_message {
     pub const SLEEPING: &str = "sleeping";
     /// phone -> Mac: app quit, end the session for good.
     pub const CLOSING: &str = "closing";
+    /// Receiver -> sender: finger input (`PROTOCOL.md` §6.1).
+    pub const TOUCH: &str = "touch";
+    /// Receiver -> sender: two-finger scroll (`PROTOCOL.md` §6.1).
+    pub const SCROLL: &str = "scroll";
     /// Sender -> receiver liveness beat, sent every 2 seconds while
     /// connected, per `PROTOCOL.md` §6.2/Appendix A and spec WSEND-05. Not
     /// named in `Shared/Protocol.swift`'s `WireMessage` enum (its doc
@@ -183,6 +187,12 @@ mod tests {
         assert_eq!(wire_message::UPDATE_REQUIRED, "updateRequired");
         assert_eq!(wire_message::SLEEPING, "sleeping");
         assert_eq!(wire_message::CLOSING, "closing");
+    }
+
+    #[test]
+    fn touch_and_scroll_wire_strings_match_protocol_md() {
+        assert_eq!(wire_message::TOUCH, "touch");
+        assert_eq!(wire_message::SCROLL, "scroll");
     }
 
     #[test]

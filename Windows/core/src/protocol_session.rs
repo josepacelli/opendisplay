@@ -201,6 +201,91 @@ pub fn handshake<S: Read + Write>(stream: &mut S) -> Result<Session, HandshakeEr
     })
 }
 
+/// One parsed in-session control message (`PROTOCOL.md` §6.1, receiver ->
+/// sender). `Ignored` covers every type this sender doesn't act on —
+/// `pencil`/`proximity` (out of scope, spec Touch/cursor AC 4) and any
+/// future/unknown type — so unrecognized messages are a deliberate no-op,
+/// never a parse error, per `PROTOCOL.md` Appendix A ("ignore every control
+/// message it does not care about").
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControlMessage {
+    Touch { phase: crate::input::TouchPhase, x_norm: f64, y_norm: f64 },
+    Scroll { dx: f64, dy: f64 },
+    Sleeping,
+    Closing,
+    Ignored,
+}
+
+#[derive(Debug, Deserialize)]
+struct ControlWire {
+    #[serde(rename = "type")]
+    msg_type: String,
+    phase: Option<String>,
+    x: Option<f64>,
+    y: Option<f64>,
+    dx: Option<f64>,
+    dy: Option<f64>,
+}
+
+fn parse_touch_phase(phase: Option<&str>) -> crate::input::TouchPhase {
+    match phase {
+        Some("began") => crate::input::TouchPhase::Began,
+        Some("ended") => crate::input::TouchPhase::Ended,
+        Some("cancelled") => crate::input::TouchPhase::Cancelled,
+        // "moved", absent, or unrecognized: never changes button state
+        // (see `input::next_touch_action`), the safest default.
+        _ => crate::input::TouchPhase::Moved,
+    }
+}
+
+/// Parses one in-session control message payload. Never fails on an
+/// unrecognized `type` (that's `ControlMessage::Ignored`, not an error) —
+/// only malformed JSON is a parse error.
+pub fn parse_control_message(payload: &[u8]) -> Result<ControlMessage, serde_json::Error> {
+    let wire: ControlWire = serde_json::from_slice(payload)?;
+    Ok(match wire.msg_type.as_str() {
+        t if t == protocol::wire_message::TOUCH => ControlMessage::Touch {
+            phase: parse_touch_phase(wire.phase.as_deref()),
+            x_norm: wire.x.unwrap_or(0.0),
+            y_norm: wire.y.unwrap_or(0.0),
+        },
+        t if t == protocol::wire_message::SCROLL => {
+            ControlMessage::Scroll { dx: wire.dx.unwrap_or(0.0), dy: wire.dy.unwrap_or(0.0) }
+        }
+        t if t == protocol::wire_message::SLEEPING => ControlMessage::Sleeping,
+        t if t == protocol::wire_message::CLOSING => ControlMessage::Closing,
+        // pencil, proximity, ping/pong/hello/welcome echoes, and anything
+        // else this sender doesn't act on in-session.
+        _ => ControlMessage::Ignored,
+    })
+}
+
+/// Applies one parsed control message: `touch`/`scroll` drive `injector`
+/// (and `touch_is_down`'s persisted click state); `sleeping`/`closing`
+/// become the matching `session_state::SessionEvent` for the caller to feed
+/// into `session_state::transition`; `Ignored` touches nothing and returns
+/// `None`.
+pub fn apply_control_message(
+    message: &ControlMessage,
+    display: &crate::display_spec::DisplaySpec,
+    injector: &mut dyn crate::input::InputInjector,
+    touch_is_down: &mut bool,
+) -> Option<crate::session_state::SessionEvent> {
+    match message {
+        ControlMessage::Touch { phase, x_norm, y_norm } => {
+            crate::input::inject_touch(display, injector, touch_is_down, *phase, *x_norm, *y_norm);
+            None
+        }
+        ControlMessage::Scroll { dx, dy } => {
+            crate::input::inject_scroll(injector, *dx, *dy);
+            None
+        }
+        ControlMessage::Sleeping => Some(crate::session_state::SessionEvent::ReceivedSleeping),
+        ControlMessage::Closing => Some(crate::session_state::SessionEvent::ReceivedClosing),
+        ControlMessage::Ignored => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,5 +418,180 @@ mod tests {
         let bytes = build_ping_message();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["type"], "ping");
+    }
+
+    // --- parse_control_message / apply_control_message: FIX3, WSEND-22. ---
+
+    #[test]
+    fn a_pencil_message_parses_to_ignored() {
+        let msg = parse_control_message(br#"{"type":"pencil","phase":"down","x":0.5,"y":0.5}"#)
+            .expect("recognized but out-of-scope type never errors");
+        assert_eq!(msg, ControlMessage::Ignored);
+    }
+
+    #[test]
+    fn a_proximity_message_parses_to_ignored() {
+        let msg = parse_control_message(br#"{"type":"proximity"}"#).expect("never errors");
+        assert_eq!(msg, ControlMessage::Ignored);
+    }
+
+    #[test]
+    fn an_unrecognized_type_parses_to_ignored_not_an_error() {
+        let msg = parse_control_message(br#"{"type":"somethingFromTheFuture"}"#)
+            .expect("unknown type is a no-op, not an error");
+        assert_eq!(msg, ControlMessage::Ignored);
+    }
+
+    #[test]
+    fn a_touch_message_parses_its_phase_and_position() {
+        let msg = parse_control_message(br#"{"type":"touch","phase":"began","x":0.25,"y":0.75}"#)
+            .unwrap();
+        assert_eq!(
+            msg,
+            ControlMessage::Touch {
+                phase: crate::input::TouchPhase::Began,
+                x_norm: 0.25,
+                y_norm: 0.75,
+            }
+        );
+    }
+
+    #[test]
+    fn a_scroll_message_parses_its_deltas() {
+        let msg = parse_control_message(br#"{"type":"scroll","dx":1.0,"dy":-2.0}"#).unwrap();
+        assert_eq!(msg, ControlMessage::Scroll { dx: 1.0, dy: -2.0 });
+    }
+
+    #[test]
+    fn a_sleeping_message_parses_to_sleeping() {
+        assert_eq!(
+            parse_control_message(br#"{"type":"sleeping"}"#).unwrap(),
+            ControlMessage::Sleeping
+        );
+    }
+
+    #[test]
+    fn a_closing_message_parses_to_closing() {
+        assert_eq!(
+            parse_control_message(br#"{"type":"closing"}"#).unwrap(),
+            ControlMessage::Closing
+        );
+    }
+
+    struct FakeInjector {
+        moves: Vec<(i32, i32)>,
+        downs: u32,
+        ups: u32,
+        scrolls: Vec<(i32, i32)>,
+    }
+
+    impl FakeInjector {
+        fn new() -> Self {
+            Self { moves: Vec::new(), downs: 0, ups: 0, scrolls: Vec::new() }
+        }
+    }
+
+    impl crate::input::InputInjector for FakeInjector {
+        fn move_cursor(&mut self, x: i32, y: i32) {
+            self.moves.push((x, y));
+        }
+        fn mouse_down(&mut self) {
+            self.downs += 1;
+        }
+        fn mouse_up(&mut self) {
+            self.ups += 1;
+        }
+        fn scroll(&mut self, horizontal: i32, vertical: i32) {
+            self.scrolls.push((horizontal, vertical));
+        }
+    }
+
+    fn test_display() -> crate::display_spec::DisplaySpec {
+        crate::display_spec::DisplaySpec {
+            width_px: 1000,
+            height_px: 2000,
+            scale_factor: 2.0,
+            orientation: crate::display_spec::Orientation::Portrait,
+        }
+    }
+
+    #[test]
+    fn applying_an_ignored_message_leaves_touch_state_and_injector_untouched() {
+        let mut injector = FakeInjector::new();
+        let mut is_down = false;
+
+        let event = apply_control_message(
+            &ControlMessage::Ignored,
+            &test_display(),
+            &mut injector,
+            &mut is_down,
+        );
+
+        assert_eq!(event, None);
+        assert!(injector.moves.is_empty());
+        assert_eq!(injector.downs, 0);
+        assert_eq!(injector.ups, 0);
+        assert!(injector.scrolls.is_empty());
+        assert!(!is_down);
+    }
+
+    #[test]
+    fn applying_a_touch_message_dispatches_through_input_inject_touch() {
+        let mut injector = FakeInjector::new();
+        let mut is_down = false;
+        let message = ControlMessage::Touch {
+            phase: crate::input::TouchPhase::Began,
+            x_norm: 0.5,
+            y_norm: 0.5,
+        };
+
+        let event =
+            apply_control_message(&message, &test_display(), &mut injector, &mut is_down);
+
+        assert_eq!(event, None);
+        assert_eq!(injector.moves, vec![(500, 1000)]);
+        assert_eq!(injector.downs, 1);
+        assert!(is_down);
+    }
+
+    #[test]
+    fn applying_a_scroll_message_dispatches_through_input_inject_scroll() {
+        let mut injector = FakeInjector::new();
+        let mut is_down = false;
+        let message = ControlMessage::Scroll { dx: 40.0, dy: 0.0 };
+
+        apply_control_message(&message, &test_display(), &mut injector, &mut is_down);
+
+        assert_eq!(injector.scrolls, vec![(crate::input::WHEEL_DELTA, 0)]);
+    }
+
+    #[test]
+    fn applying_sleeping_yields_the_received_sleeping_session_event() {
+        let mut injector = FakeInjector::new();
+        let mut is_down = false;
+
+        let event = apply_control_message(
+            &ControlMessage::Sleeping,
+            &test_display(),
+            &mut injector,
+            &mut is_down,
+        );
+
+        assert_eq!(event, Some(crate::session_state::SessionEvent::ReceivedSleeping));
+    }
+
+    #[test]
+    fn applying_closing_yields_the_received_closing_session_event() {
+        let mut injector = FakeInjector::new();
+        let mut is_down = false;
+
+        let event = apply_control_message(
+            &ControlMessage::Closing,
+            &test_display(),
+            &mut injector,
+            &mut is_down,
+        );
+
+        assert_eq!(event, Some(crate::session_state::SessionEvent::ReceivedClosing));
     }
 }

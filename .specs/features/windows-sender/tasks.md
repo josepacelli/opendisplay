@@ -1060,18 +1060,18 @@ Fix items found by the independent Verifier (`.specs/features/windows-sender/val
 **Requirement**: WSEND-22; Verifier gap 2 (Major)
 
 **Done when**:
-- [ ] A `pencil` or `proximity` message parses to `ControlMessage::Ignored` and produces no error
-- [ ] Applying an ignored message leaves touch state and the input injector untouched
-- [ ] `touch`/`scroll`/`sleeping`/`closing` still dispatch correctly through the same function
-- [ ] Gate check passes: `cargo test -p core` / `cargo test -p protocol` — NOT RUN, see Gate line below
-- [ ] Test count: 9 tests written in `protocol_session.rs`, 1 in `protocol` crate
+- [x] A `pencil` or `proximity` message parses to `ControlMessage::Ignored` and produces no error
+- [x] Applying an ignored message leaves touch state and the input injector untouched
+- [x] `touch`/`scroll`/`sleeping`/`closing` still dispatch correctly through the same function
+- [x] Gate check passes: `cargo test -p core` / `cargo test -p protocol` — PASS, see Gate line below
+- [x] Test count: 13 tests added in `protocol_session.rs` (parse + apply, covering touch/scroll/sleeping/closing/pencil/proximity/unknown-type), 1 added in `protocol` crate (`touch_and_scroll_wire_strings_match_protocol_md`)
 
-**Status: partial.** Only the wire constants landed (`wire_message::PENCIL`/`PROXIMITY` in `Windows/protocol/src/lib.rs`, plus a test confirming they match `PROTOCOL.md`). The `protocol_session.rs` dispatcher itself (the actual ignore-without-erroring behavior) was interrupted mid-work when this fix round was stopped by the user — still open for the next fix round.
+**Status: done.** Real Windows toolchain (rustup + VS Build Tools) installed and `cargo test --workspace` now runs for real, first time this gate has actually executed.
 
 **Tests**: unit
 **Gate**: quick
 
-**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+**Gate: PASS — `cargo test --workspace` on Windows (rustup stable-msvc + VS Build Tools 17.14). core: 82 passed; protocol: 16 passed; ipc: 10 passed; tray: 10 passed. 0 failed.**
 
 ---
 
