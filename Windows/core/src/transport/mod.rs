@@ -4,5 +4,6 @@
 //! that unifies them. See `design.md`'s `windows-core` component for the
 //! interface shapes this mirrors.
 
+pub mod dial;
 pub mod usb;
 pub mod wifi;
