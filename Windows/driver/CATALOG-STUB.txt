@@ -1,0 +1,16 @@
+opendisplay-idd.cat is a binary security catalog produced by the build
+pipeline, not hand-authored source:
+
+  dev (test-signed):  Inf2Cat.exe /driver:. /os:10_X64  then
+                       signtool.exe sign /a /v /s PrivateCertStore
+                       /n <dev-cert-subject> /fd sha256 opendisplay-idd.cat
+                       (see install-dev.ps1, T8)
+
+  release:            the same Inf2Cat output submitted to Microsoft
+                       Partner Center for attestation signing (spec.md
+                       Assumptions: driver signing), returning a
+                       Microsoft-signed opendisplay-idd.cat.
+
+Neither output exists in source control. opendisplay-idd.inf's
+[Version] section names the file (CatalogFile = opendisplay-idd.cat) so
+both paths produce a file the INF already expects.

@@ -1,0 +1,64 @@
+; opendisplay-idd.inf
+;
+; opendisplay-idd: a UMDF2/IddCx indirect display driver, root-enumerated
+; (no physical hardware ID — the device node is created at runtime by
+; windows-installer via SwDeviceCreate, per design.md's Integration
+; Points). Structural reference only: Microsoft's IddSample INF shape,
+; documented at
+; https://learn.microsoft.com/windows-hardware/drivers/display/iddcx-driver-development-guide.
+; Not vendored; production builds swap [SignatureAttributes]/the catalog
+; for Microsoft attestation signing (spec.md Assumptions: driver signing).
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Display
+ClassGuid   = {4d36e968-e325-11ce-bfc1-08002be10318}
+Provider    = %ProviderString%
+CatalogFile = opendisplay-idd.cat
+DriverVer   = ; stamped by the build pipeline
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerString% = OpenDisplay, NT$ARCH$
+
+[OpenDisplay.NT$ARCH$]
+%DeviceDesc% = opendisplay_idd_Device, Root\OpenDisplayIdd
+
+[opendisplay_idd_Device.NT]
+CopyFiles = UMDriverCopy
+
+[opendisplay_idd_Device.NT.hw]
+AddReg = opendisplay_idd_Device_AddReg
+
+[opendisplay_idd_Device_AddReg]
+HKR,,DeviceCharacteristics,0x10001,0x0100      ; Use same security checks on relative opens
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)"   ; Only system/admin can open the device
+
+[opendisplay_idd_Device.NT.Services]
+AddService = opendisplay_idd, 0x000001fa, opendisplay_idd_ServiceInstall
+
+[opendisplay_idd_ServiceInstall]
+DisplayName     = %ServiceName%
+ServiceType     = 1                  ; SERVICE_KERNEL_DRIVER — UMDF host loads the actual usermode driver
+StartType       = 3                  ; SERVICE_DEMAND_START
+ErrorControl    = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary   = %13%\WUDFRd.sys
+LoadOrderGroup  = Base
+
+[opendisplay_idd_Device.NT.Wdf]
+UmdfService              = opendisplay_idd, opendisplay_idd_UmdfInstall
+UmdfServiceOrder         = opendisplay_idd
+UmdfKernelModeClientPolicy = AllowKernelModeClients
+
+[opendisplay_idd_UmdfInstall]
+UmdfLibraryVersion = $UMDFVERSION$
+ServiceBinary      = %13%\opendisplay-idd.dll
+
+[UMDriverCopy]
+opendisplay-idd.dll
+
+[Strings]
+ProviderString     = "OpenDisplay"
+ManufacturerString = "OpenDisplay"
+DeviceDesc         = "OpenDisplay Virtual Display"
+ServiceName        = "opendisplay-idd"

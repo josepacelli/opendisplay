@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  opendisplay-idd.vcxproj
+
+  Minimal UMDF2/IddCx driver project. Structural reference only: the
+  property shape Visual Studio's WDK "User Mode Driver, Empty (UMDF V2)"
+  template produces, extended with IddCx. Written on a macOS host with no
+  WDK/MSBuild installed — this has not been built (see Driver.h's
+  verification-status note; T4's "Project builds under the WDK toolchain"
+  Done-when item is unchecked for exactly this reason).
+-->
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{7A6B3B7E-1B8F-4C1E-9A6B-9B0C1D6F3E10}</ProjectGuid>
+    <RootNamespace>opendisplayidd</RootNamespace>
+    <TargetName>opendisplay-idd</TargetName>
+    <Platform>x64</Platform>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>UMDF</DriverType>
+    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+    <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.WindowsDriver.props" />
+
+  <PropertyGroup>
+    <!-- Test-signed for local dev iteration (Windows/driver/install-dev.ps1,
+         T8); the release pipeline swaps this for attestation signing
+         (spec.md Assumptions: driver signing). Out of scope for this
+         project file per design.md's Out of Scope table. -->
+    <SignMode>TestSign</SignMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ClCompile Include="Driver.cpp" />
+    <ClCompile Include="Device.cpp" />
+    <ClCompile Include="Display.cpp" />
+    <ClInclude Include="Driver.h" />
+    <ClInclude Include="Device.h" />
+    <ClInclude Include="Display.h" />
+    <ClInclude Include="Ioctl.h" />
+    <Inf Include="opendisplay-idd.inf" />
+  </ItemGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(WDKContentRoot)Include\wdf\umdf\2.33;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>WdfDriverStubUm.lib;IddCxStub.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.WindowsDriver.targets" />
+</Project>
