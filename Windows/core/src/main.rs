@@ -15,6 +15,7 @@
 //! involved.
 
 mod protocol_session;
+mod session_state;
 mod transport;
 
 /// The process token integrity levels relevant to elevation, per

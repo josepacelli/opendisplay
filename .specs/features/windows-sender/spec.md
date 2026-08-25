@@ -196,13 +196,13 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | WSEND-03 | P1: WiFi extension | Tasks | In Tasks |
 | WSEND-04 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-05 | P1: WiFi extension | Tasks | In Tasks |
-| WSEND-06 | P1: WiFi extension | Tasks | In Tasks |
-| WSEND-07 | P1: WiFi extension | Tasks | In Tasks |
+| WSEND-06 | P1: WiFi extension | Tasks | Implementing |
+| WSEND-07 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-08 | P1: USB extension | Tasks | Implementing |
 | WSEND-09 | P1: USB extension | Tasks | Implementing |
 | WSEND-10 | P1: USB extension | Tasks | In Tasks |
 | WSEND-11 | P1: USB extension | Tasks | Implementing |
-| WSEND-12 | P1: USB extension | Tasks | In Tasks |
+| WSEND-12 | P1: USB extension | Tasks | Implementing |
 | WSEND-13 | P1: Driver install | Tasks | Implementing |
 | WSEND-14 | P1: Driver install | Tasks | Implementing |
 | WSEND-15 | P1: Driver install | Tasks | In Tasks |
