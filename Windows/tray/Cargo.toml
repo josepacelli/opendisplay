@@ -16,4 +16,11 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    # Added by FIX6 (windows-tray main()): GetModuleHandleW, to register
+    # the hidden message-only window the tray icon and its message loop
+    # are anchored to.
+    "Win32_System_LibraryLoader",
+    # WNDCLASSW's hbrBackground field is HBRUSH (Win32_Graphics_Gdi), even
+    # though this window paints nothing.
+    "Win32_Graphics_Gdi",
 ] }

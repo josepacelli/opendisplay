@@ -15,6 +15,14 @@ use crate::session_state::SessionState;
 use crate::transport::{usb, wifi};
 use ipc::{CoreToTray, DiscoveredDevice as IpcDevice, Transport as IpcTransport, TrayToCore};
 
+/// The named pipe `windows-tray`'s `ipc_client` connects to. Must match
+/// `Windows/tray/src/ipc_client.rs`'s `PIPE_NAME` exactly — two separate
+/// binaries with no shared crate for this constant, hand-kept in sync the
+/// same way `Windows/protocol` hand-ports `Shared/Protocol.swift`
+/// (`[[memory:AD-002]]`'s pattern applied to a third cross-boundary
+/// contract).
+pub const PIPE_NAME: &str = r"\\.\pipe\opendisplay-core";
+
 /// What the server should do in response to one incoming line from the
 /// tray. `windows-core` treats every line as untrusted input (crosses the
 /// unprivileged -> elevated boundary, design.md's Error Handling
@@ -82,8 +90,18 @@ impl IpcServer {
     pub fn apply(&mut self, action: ServerAction) -> Vec<Effect> {
         match action {
             ServerAction::Connect { device_id } => {
+                // A Connect to a *different* device than the one already
+                // active must end that session first (Edge Case: spec.md
+                // "second device while one connected") — otherwise two
+                // dials would run concurrently. Connecting to the same
+                // already-current device is a no-op teardown-wise.
+                let mut effects = Vec::new();
+                if self.current_device_id.as_deref().is_some_and(|current| current != device_id) {
+                    effects.push(Effect::TeardownSession);
+                }
                 self.current_device_id = Some(device_id.clone());
-                vec![Effect::DialDevice { device_id }]
+                effects.push(Effect::DialDevice { device_id });
+                effects
             }
             ServerAction::Disconnect => {
                 self.current_device_id = None;
@@ -220,15 +238,38 @@ pub mod windows_impl {
         }
     }
 
-    /// Closes a pipe handle opened by [`create_pipe`]. The connect/read/
-    /// write loop itself (accepting a client, reading newline-delimited
-    /// `TrayToCore` lines via `super::handle_incoming_line`, writing
-    /// `CoreToTray` lines back) is a runtime concern wired in by whatever
-    /// drives `windows-core`'s event loop — not modeled here, same as
-    /// `session_state`'s retry timer.
+    /// Closes a pipe handle opened by [`create_pipe`].
     pub fn close_pipe(handle: HANDLE) {
         unsafe {
             let _ = CloseHandle(handle);
+        }
+    }
+
+    /// Creates a fresh pipe instance at `pipe_name` and blocks until
+    /// `windows-tray`'s `ipc_client` connects to it, then hands back the
+    /// connected end as an ordinary `std::fs::File` — a named pipe handle
+    /// is `Read`/`Write` through the same `ReadFile`/`WriteFile` calls a
+    /// file handle uses, so no pipe-specific I/O call is needed on this
+    /// side once connected (`ConnectNamedPipe` is the only pipe-specific
+    /// step). This is the connect half of the loop the module doc comment
+    /// used to say was "not modeled here" (FIX1/FIX6).
+    pub fn accept_client(pipe_name: &str) -> windows::core::Result<std::fs::File> {
+        use std::os::windows::io::FromRawHandle;
+        use windows::Win32::Foundation::ERROR_PIPE_CONNECTED;
+        use windows::Win32::System::Pipes::ConnectNamedPipe;
+
+        let handle = create_pipe(pipe_name)?;
+        unsafe {
+            // A client that connects between CreateNamedPipeW and this
+            // call surfaces as ERROR_PIPE_CONNECTED, not a real failure —
+            // it means the connection is already established.
+            if let Err(err) = ConnectNamedPipe(handle, None) {
+                if err.code() != ERROR_PIPE_CONNECTED.to_hresult() {
+                    close_pipe(handle);
+                    return Err(err);
+                }
+            }
+            Ok(std::fs::File::from_raw_handle(handle.0 as std::os::windows::io::RawHandle))
         }
     }
 }
@@ -298,6 +339,32 @@ mod tests {
 
         assert_eq!(effects, vec![Effect::TeardownSession]);
         assert_eq!(server.current_device_id, None);
+    }
+
+    // --- FIX4: Connect to a different device tears down the current one first. ---
+
+    #[test]
+    fn connecting_to_a_different_device_while_one_is_active_tears_down_first() {
+        let mut server = IpcServer::new();
+        server.apply(ServerAction::Connect { device_id: "A".into() });
+
+        let effects = server.apply(ServerAction::Connect { device_id: "B".into() });
+
+        assert_eq!(
+            effects,
+            vec![Effect::TeardownSession, Effect::DialDevice { device_id: "B".into() }]
+        );
+        assert_eq!(server.current_device_id, Some("B".to_string()));
+    }
+
+    #[test]
+    fn connecting_to_the_same_already_current_device_does_not_spuriously_tear_down() {
+        let mut server = IpcServer::new();
+        server.apply(ServerAction::Connect { device_id: "A".into() });
+
+        let effects = server.apply(ServerAction::Connect { device_id: "A".into() });
+
+        assert_eq!(effects, vec![Effect::DialDevice { device_id: "A".into() }]);
     }
 
     #[test]

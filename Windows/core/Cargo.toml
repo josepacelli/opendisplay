@@ -18,7 +18,12 @@ mdns-sd = "0.11"
 # Pinned per design.md's Risks & Concerns ("idevice is a young, independent
 # pure-Rust reimplementation... pin a known-good version, monitor upstream").
 idevice = { version = "0.1", features = ["usbmuxd"] }
-tokio = { version = "1", features = ["rt"] }
+# "net"/"time"/"rt-multi-thread" added for FIX1/FIX6's real runtime: the
+# usbmuxd discovery thread and each session's dial_usb both drive idevice's
+# async client via cloned Handles from multiple OS threads concurrently,
+# which needs a real (multi-thread-safe) reactor, not just a Handle type
+# over a bare current-thread runtime.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

@@ -142,6 +142,57 @@ fn read_one_frame<S: Read>(stream: &mut S) -> Result<Vec<u8>, HandshakeError> {
     }
 }
 
+/// Attempts to decode one complete frame out of `buf` (a persistent
+/// accumulation buffer the caller keeps across calls), reading at most one
+/// more chunk from `stream` if `buf` doesn't already hold a full frame.
+///
+/// Unlike [`read_one_frame`], this never blocks indefinitely waiting for a
+/// full frame: a caller that puts a short read timeout on `stream` (e.g. a
+/// `TcpStream::set_read_timeout`) turns "no data arrived yet" into
+/// `WouldBlock`/`TimedOut`, which this treats as `Ok(None)` rather than an
+/// error — so one thread can interleave control-message reads with
+/// capture/encode/send on the same connection instead of dedicating a
+/// thread to blocking reads.
+pub(crate) fn try_read_frame<S: Read>(
+    stream: &mut S,
+    buf: &mut Vec<u8>,
+) -> Result<Option<Vec<u8>>, HandshakeError> {
+    if let Some(payload) = decode_and_drain(buf)? {
+        return Ok(Some(payload));
+    }
+
+    let mut chunk = [0u8; 4096];
+    match stream.read(&mut chunk) {
+        Ok(0) => Err(HandshakeError::Io(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "connection closed",
+        ))),
+        Ok(n) => {
+            buf.extend_from_slice(&chunk[..n]);
+            decode_and_drain(buf)
+        }
+        Err(err)
+            if err.kind() == io::ErrorKind::WouldBlock || err.kind() == io::ErrorKind::TimedOut =>
+        {
+            Ok(None)
+        }
+        Err(err) => Err(HandshakeError::Io(err)),
+    }
+}
+
+fn decode_and_drain(buf: &mut Vec<u8>) -> Result<Option<Vec<u8>>, HandshakeError> {
+    match protocol::decode_frame(buf) {
+        Ok(Some(frame)) => {
+            let payload = frame.payload.to_vec();
+            let consumed = frame.consumed;
+            buf.drain(0..consumed);
+            Ok(Some(payload))
+        }
+        Ok(None) => Ok(None),
+        Err(err) => Err(HandshakeError::Frame(err)),
+    }
+}
+
 fn write_frame<S: Write>(stream: &mut S, payload: &[u8]) -> Result<(), HandshakeError> {
     let framed = protocol::encode_frame(payload).map_err(HandshakeError::Frame)?;
     stream.write_all(&framed).map_err(HandshakeError::Io)
@@ -409,6 +460,69 @@ mod tests {
         assert_eq!(frames[0]["type"], "welcome");
         assert_eq!(frames[1]["type"], "updateRequired");
         assert_eq!(frames[1]["target"], "ios");
+    }
+
+    // --- try_read_frame: FIX1/FIX6, the session loop's non-blocking read. ---
+
+    /// A `Read` whose reads always return `WouldBlock`, simulating a
+    /// `TcpStream` with a short read timeout and nothing arrived yet.
+    struct WouldBlockStream;
+    impl Read for WouldBlockStream {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::WouldBlock, "nothing arrived yet"))
+        }
+    }
+
+    #[test]
+    fn a_would_block_read_with_no_buffered_frame_yields_none_not_an_error() {
+        let mut stream = WouldBlockStream;
+        let mut buf = Vec::new();
+
+        let result = try_read_frame(&mut stream, &mut buf);
+
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[test]
+    fn a_frame_that_arrives_in_one_read_is_decoded_and_drained_from_buf() {
+        let framed = protocol::encode_frame(br#"{"type":"sleeping"}"#).unwrap();
+        let mut stream = Cursor::new(framed);
+        let mut buf = Vec::new();
+
+        let result = try_read_frame(&mut stream, &mut buf).unwrap();
+
+        assert_eq!(result, Some(br#"{"type":"sleeping"}"#.to_vec()));
+        assert!(buf.is_empty(), "a fully-consumed frame must not leave bytes behind in buf");
+    }
+
+    #[test]
+    fn a_frame_split_across_two_reads_is_decoded_once_both_arrive() {
+        let framed = protocol::encode_frame(br#"{"type":"closing"}"#).unwrap();
+        let (first_half, second_half) = framed.split_at(3);
+        let mut buf = Vec::new();
+
+        let mut first_stream = Cursor::new(first_half.to_vec());
+        assert_eq!(try_read_frame(&mut first_stream, &mut buf).unwrap(), None);
+
+        let mut second_stream = Cursor::new(second_half.to_vec());
+        let result = try_read_frame(&mut second_stream, &mut buf).unwrap();
+        assert_eq!(result, Some(br#"{"type":"closing"}"#.to_vec()));
+    }
+
+    #[test]
+    fn two_frames_back_to_back_are_decoded_one_per_call_in_order() {
+        let mut framed = protocol::encode_frame(br#"{"type":"sleeping"}"#).unwrap();
+        framed.extend(protocol::encode_frame(br#"{"type":"closing"}"#).unwrap());
+        let mut stream = Cursor::new(framed);
+        let mut buf = Vec::new();
+
+        let first = try_read_frame(&mut stream, &mut buf).unwrap();
+        assert_eq!(first, Some(br#"{"type":"sleeping"}"#.to_vec()));
+
+        // The second frame is already fully buffered from the first read,
+        // so this call decodes it without touching `stream` again.
+        let second = try_read_frame(&mut stream, &mut buf).unwrap();
+        assert_eq!(second, Some(br#"{"type":"closing"}"#.to_vec()));
     }
 
     // --- build_ping_message: spec WSEND-05. ---

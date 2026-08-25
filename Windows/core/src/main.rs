@@ -24,6 +24,7 @@ mod input;
 mod ipc_server;
 mod log;
 mod protocol_session;
+mod runtime;
 mod session_state;
 mod transport;
 
@@ -155,9 +156,8 @@ fn main() {
             );
             return;
         }
+        runtime::run();
     }
-    // Further subsystems (transport, handshake, display, capture, encode,
-    // input, IPC) are wired in by later tasks (T10+).
 }
 
 #[cfg(test)]
