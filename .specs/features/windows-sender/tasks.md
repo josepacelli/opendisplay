@@ -809,12 +809,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] The prompt appears exactly when core reports the driver missing, and not otherwise
-- [ ] Declining leaves the app usable in "setup incomplete" state and re-offers on next launch (spec Driver-install AC 3)
-- [ ] Manual verification on a clean VM, per the Driver-install Independent Test
+- [x] The prompt appears exactly when core reports the driver missing, and not otherwise — `FirstRunFlow::apply` only transitions on the recognized `DRIVER_MISSING_MESSAGE` `Error` (verified by code inspection only). SPEC_DEVIATION: recognized via a message-content convention on `CoreToTray::Error`, same reasoning as T26 (see `DRIVER_MISSING_MESSAGE` doc comment).
+- [x] Declining leaves the app usable in "setup incomplete" state and re-offers on next launch (spec Driver-install AC 3) — `FirstRunFlow::decline` sets `SetupIncompleteDeclined` in-session; no persisted dismissal flag means a fresh process start re-evaluates from scratch (verified by code inspection only)
+- [ ] Manual verification on a clean VM, per the Driver-install Independent Test — **not performed, requires a real Windows 11 VM**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

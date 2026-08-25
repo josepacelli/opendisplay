@@ -4,5 +4,6 @@
 //! (manual verification only), with the underlying state/decision logic
 //! kept plain and separable from the OS calls.
 
+pub mod first_run;
 pub mod picker;
 pub mod status;
