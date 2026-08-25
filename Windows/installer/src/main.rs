@@ -9,5 +9,6 @@
 mod autostart;
 mod driver_install;
 mod scheduled_task;
+mod uninstall;
 
 fn main() {}

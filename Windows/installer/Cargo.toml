@@ -20,4 +20,8 @@ windows = { version = "0.58", features = [
     # Added by T31 (per-user autostart for windows-tray): the HKCU Run-key
     # registry write.
     "Win32_System_Registry",
+    # Added by T32 (uninstall): ERROR_FILE_NOT_FOUND, for treating an
+    # already-removed Scheduled Task/autostart entry as success (idempotent
+    # uninstall, per design.md's install()/uninstall() contract).
+    "Win32_Foundation",
 ] }

@@ -905,11 +905,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] After uninstall, Device Manager shows no `opendisplay-idd` device, Task Scheduler shows no `windows-core` task, and no autostart entry remains for `windows-tray`
-- [ ] Manual verification via Windows "Apps & features", per the Driver-install Independent Test
+- [x] After uninstall, Device Manager shows no `opendisplay-idd` device, Task Scheduler shows no `windows-core` task, and no autostart entry remains for `windows-tray` — `uninstall()` composes `PnpUtilDriverRemover`/`ComScheduledTaskRemover`/`RegistryAutostartRemover`, then re-checks `DeviceInterfaceCheck::is_available()` and errors on `OrphanedDeviceInterfaceRemains` if it's still present (verified by code inspection only)
+- [ ] Manual verification via Windows "Apps & features", per the Driver-install Independent Test — **not performed, requires a real Windows 11 VM**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
