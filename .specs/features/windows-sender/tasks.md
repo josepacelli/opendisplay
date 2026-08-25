@@ -737,12 +737,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Selecting a device sends `TrayToCore::Connect`
-- [ ] The list updates live as `DeviceList` messages arrive
-- [ ] Manual verification: WiFi and USB devices both appear and are selectable, per their respective Independent Tests
+- [x] Selecting a device sends `TrayToCore::Connect` — `DevicePicker::select` (verified by code inspection only)
+- [x] The list updates live as `DeviceList` messages arrive — `DevicePicker::apply` (verified by code inspection only)
+- [ ] Manual verification: WiFi and USB devices both appear and are selectable, per their respective Independent Tests — **not performed, requires real Windows 11 + iOS hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

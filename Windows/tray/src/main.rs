@@ -4,5 +4,6 @@
 //! compiling binary for T1 (workspace scaffolding).
 
 mod ipc_client;
+mod ui;
 
 fn main() {}
