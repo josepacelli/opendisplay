@@ -7,6 +7,8 @@ description = "windows-core: the elevated OpenDisplay Windows sender workhorse (
 
 [dependencies]
 protocol = { path = "../protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # Pinned per design.md's Risks & Concerns ("pin a known-good version,
 # monitor upstream" — mdns-sd is a pure-Rust DNS-SD implementation, no
 # system Bonjour/mDNSResponder needed on Windows).

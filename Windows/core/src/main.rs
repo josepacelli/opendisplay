@@ -14,6 +14,7 @@
 //! windows-core start?" — is plain, unit-testable Rust with no OS call
 //! involved.
 
+mod protocol_session;
 mod transport;
 
 /// The process token integrity levels relevant to elevation, per
