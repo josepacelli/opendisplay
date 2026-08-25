@@ -267,11 +267,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] `IOCTL_RESIZE_DISPLAY` changes the existing monitor's resolution without requiring a full destroy/recreate cycle visible to Windows (no flicker of the whole display arrangement)
-- [ ] Manual verification: resize while another app has a window on the virtual display, confirm no crash
+- [x] `IOCTL_RESIZE_DISPLAY` changes the existing monitor's resolution without requiring a full destroy/recreate cycle visible to Windows (no flicker of the whole display arrangement) — implemented via updating `CurrentParams` + re-arrival on the same `MonitorObject`, no departure/create round trip; verified by code inspection only
+- [ ] Manual verification: resize while another app has a window on the virtual display, confirm no crash — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

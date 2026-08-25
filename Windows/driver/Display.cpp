@@ -135,10 +135,32 @@ OpenDisplayIddResizeDisplay(
     _In_ POPENDISPLAY_DISPLAY_PARAMS Params
 )
 {
-    UNREFERENCED_PARAMETER(Device);
-    UNREFERENCED_PARAMETER(Params);
-    // Implemented by T6.
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_CONTEXT deviceContext = DeviceGetContext(Device);
+
+    if (!deviceContext->MonitorCreated)
+    {
+        // Nothing to resize yet; the caller should CREATE first
+        // (IOCTL_OPENDISPLAY_CREATE_DISPLAY, T5).
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    // Update the mode windows-core wants before re-triggering mode
+    // enumeration: EvtIddCxMonitorGetDefaultDescriptionModes and
+    // EvtIddCxMonitorQueryTargetModes (Device.cpp) both read
+    // CurrentParams, so this is what makes the *next* mode query report
+    // the new resolution.
+    deviceContext->CurrentParams = *Params;
+
+    // Re-arrival on the same, still-live MonitorObject asks Windows to
+    // re-query target modes for this monitor (WSEND-04: rebuild at the
+    // new native resolution on rotation) without a
+    // IddCxMonitorDeparture/IddCxMonitorCreate round trip, so the monitor
+    // keeps its identity in the display arrangement instead of
+    // disappearing and reappearing. This has not been exercised against
+    // a real WDK/IddCx runtime (no toolchain on this host) — verify the
+    // no-flicker behavior on real hardware per T6's manual verification.
+    IDARG_OUT_MONITORARRIVAL monitorArrivalOut = {};
+    return IddCxMonitorArrival(deviceContext->MonitorObject, &monitorArrivalOut);
 }
 
 NTSTATUS
