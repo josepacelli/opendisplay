@@ -17,4 +17,7 @@ windows = { version = "0.58", features = [
     "Win32_System_TaskScheduler",
     "Win32_System_Com",
     "Win32_System_Variant",
+    # Added by T31 (per-user autostart for windows-tray): the HKCU Run-key
+    # registry write.
+    "Win32_System_Registry",
 ] }

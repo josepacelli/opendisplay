@@ -6,6 +6,7 @@
 //! touch `Windows/installer/`, so this Cargo.toml/main.rs pair is created
 //! now, mirroring how T1 scaffolded `protocol`/`ipc`/`core`/`tray`.
 
+mod autostart;
 mod driver_install;
 mod scheduled_task;
 

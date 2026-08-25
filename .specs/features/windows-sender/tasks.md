@@ -882,11 +882,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] After registration, `windows-tray` starts at the next logon without elevation
-- [ ] Manual verification: log off/on, confirm the tray icon appears at Medium integrity
+- [x] After registration, `windows-tray` starts at the next logon without elevation — `RegistryAutostartRegistrar` writes an `HKEY_CURRENT_USER\...\Run` value (a per-user, unprivileged autostart mechanism — no Scheduled Task/elevation involved), verified by code inspection only
+- [ ] Manual verification: log off/on, confirm the tray icon appears at Medium integrity — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
