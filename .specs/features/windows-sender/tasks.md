@@ -859,11 +859,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] After registration, `windows-core` starts elevated at the next logon with no UAC prompt
-- [ ] Manual verification: log off/on, confirm `windows-core` is running at High integrity
+- [x] After registration, `windows-core` starts elevated at the next logon with no UAC prompt — `register_logon_task` sets `IPrincipal::SetRunLevel(TASK_RUNLEVEL_HIGHEST)` and an `AtLogOn` (`TASK_TRIGGER_LOGON`) trigger via the Task Scheduler COM API (verified by code inspection only)
+- [ ] Manual verification: log off/on, confirm `windows-core` is running at High integrity — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

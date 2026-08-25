@@ -12,4 +12,9 @@ description = "windows-installer: one-shot elevated first-run setup (driver inst
 # device-interface verification.
 windows = { version = "0.58", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
+    # Added by T30 (Scheduled Task registration): the Task Scheduler COM
+    # API (ITaskService et al.) and the COM runtime it needs.
+    "Win32_System_TaskScheduler",
+    "Win32_System_Com",
+    "Win32_System_Variant",
 ] }

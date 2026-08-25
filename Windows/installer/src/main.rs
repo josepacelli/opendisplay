@@ -7,5 +7,6 @@
 //! now, mirroring how T1 scaffolded `protocol`/`ipc`/`core`/`tray`.
 
 mod driver_install;
+mod scheduled_task;
 
 fn main() {}
