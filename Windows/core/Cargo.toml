@@ -23,4 +23,9 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Threading",
+    # Added by T16 (display::create/resize/destroy): resolving and opening
+    # opendisplay-idd's device interface and issuing its IOCTLs.
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
 ] }

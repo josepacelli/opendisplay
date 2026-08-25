@@ -514,12 +514,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] `create` yields a `VirtualDisplayHandle` identifying the adapter/output for the capture stage
-- [ ] `resize` rebuilds at a new `DisplaySpec` without a full destroy/recreate visible to Windows
-- [ ] Manual verification: a `hello` from a real device produces a display at its exact native resolution and scale (spec WiFi Independent Test)
+- [x] `create` yields a `VirtualDisplayHandle` identifying the adapter/output for the capture stage — implemented via `SetupDiGetClassDevsW`/`SetupDiEnumDeviceInterfaces`/`CreateFileW` against `GUID_DEVINTERFACE_OPENDISPLAY_IDD`, then `IOCTL_OPENDISPLAY_CREATE_DISPLAY`; verified by code inspection only
+- [x] `resize` rebuilds at a new `DisplaySpec` without a full destroy/recreate visible to Windows — issues `IOCTL_OPENDISPLAY_RESIZE_DISPLAY` on the already-open handle, matching T6's driver-side contract; verified by code inspection only
+- [ ] Manual verification: a `hello` from a real device produces a display at its exact native resolution and scale (spec WiFi Independent Test) — **not performed, requires real Windows 11 + iOS hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
