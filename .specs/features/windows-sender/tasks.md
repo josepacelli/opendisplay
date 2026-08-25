@@ -538,12 +538,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Capture targets the correct output for the just-created virtual display, not the physical primary
-- [ ] The cursor is excluded from captured frames (forwarded separately per T21)
-- [ ] Manual verification: dragging a window onto the virtual display shows up in captured frames
+- [x] Capture targets the correct output for the just-created virtual display, not the physical primary — matched by `DesktopCoordinates` size against `DisplaySpec`, preferring a non-`(0,0)`-origin output (documented heuristic — the driver's IOCTL contract hands back no adapter LUID); verified by code inspection only
+- [x] The cursor is excluded from captured frames (forwarded separately per T21) — inherent to `IDXGIOutputDuplication::AcquireNextFrame`, which does not composite the hardware cursor into the desktop image; verified by code inspection only
+- [ ] Manual verification: dragging a window onto the virtual display shows up in captured frames — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
