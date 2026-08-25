@@ -761,11 +761,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Connected/disconnected/not-elevated/core-not-running states each render distinctly
-- [ ] Manual verification against a live session
+- [x] Connected/disconnected/not-elevated/core-not-running states each render distinctly — `TrayStatus` enum + `status_for_connect_failure`/`status_for_message` classify into all four; `windows_impl::render` gives each a distinct tooltip string (verified by code inspection only). SPEC_DEVIATION: `NotElevated` is recognized via a message-content convention on `CoreToTray::Error` since the already-committed `ipc` schema (T3) has no dedicated variant — see the `NOT_ELEVATED_MESSAGE` doc comment in `status.rs`.
+- [ ] Manual verification against a live session — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

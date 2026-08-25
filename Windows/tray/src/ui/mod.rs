@@ -5,3 +5,4 @@
 //! kept plain and separable from the OS calls.
 
 pub mod picker;
+pub mod status;
