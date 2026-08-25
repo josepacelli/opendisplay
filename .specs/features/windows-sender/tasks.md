@@ -974,11 +974,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Single elevation prompt installs the driver with no Secure Boot/testsigning changes required
-- [ ] Uninstall via "Apps & features" leaves no orphaned device
+- [ ] Single elevation prompt installs the driver with no Secure Boot/testsigning changes required — **not performed, no hardware available**
+- [ ] Uninstall via "Apps & features" leaves no orphaned device — **not performed, no hardware available**
 
 **Tests**: none
 **Gate**: manual
+
+**Gate: NOT RUN — procedure written to `Windows/docs/manual-test-driver-install.md`; execution requires a clean Windows 11 VM with Secure Boot on, not available in this session**
 
 ---
 
