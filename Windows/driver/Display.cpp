@@ -168,7 +168,28 @@ OpenDisplayIddDestroyDisplay(
     _In_ WDFDEVICE Device
 )
 {
-    UNREFERENCED_PARAMETER(Device);
-    // Implemented by T7.
-    return STATUS_NOT_IMPLEMENTED;
+    PDEVICE_CONTEXT deviceContext = DeviceGetContext(Device);
+
+    if (!deviceContext->MonitorCreated)
+    {
+        // Already torn down (or never created): destroy is idempotent so
+        // a retried DESTROY from windows-core's teardown path never
+        // errors on a monitor that is already gone.
+        return STATUS_SUCCESS;
+    }
+
+    NTSTATUS status = IddCxMonitorDeparture(deviceContext->MonitorObject);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    // Leave Device Manager / Display Settings in their pre-create state
+    // (WSEND-18 — driver-side half): clear the monitor handle and params
+    // so a subsequent CREATE starts clean rather than seeing stale state.
+    deviceContext->MonitorObject = NULL;
+    deviceContext->MonitorCreated = FALSE;
+    RtlZeroMemory(&deviceContext->CurrentParams, sizeof(deviceContext->CurrentParams));
+
+    return STATUS_SUCCESS;
 }

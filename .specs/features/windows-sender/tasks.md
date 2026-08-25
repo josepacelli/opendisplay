@@ -290,11 +290,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] `IOCTL_DESTROY_DISPLAY` removes the monitor from Windows Display Settings immediately
-- [ ] Manual verification: create → destroy leaves Device Manager and Display Settings in their pre-create state
+- [x] `IOCTL_DESTROY_DISPLAY` removes the monitor from Windows Display Settings immediately — implemented via `IddCxMonitorDeparture` + state reset, idempotent on a repeated call; verified by code inspection only
+- [ ] Manual verification: create → destroy leaves Device Manager and Display Settings in their pre-create state — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
