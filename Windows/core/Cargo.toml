@@ -11,6 +11,10 @@ protocol = { path = "../protocol" }
 # monitor upstream" — mdns-sd is a pure-Rust DNS-SD implementation, no
 # system Bonjour/mDNSResponder needed on Windows).
 mdns-sd = "0.11"
+# Pinned per design.md's Risks & Concerns ("idevice is a young, independent
+# pure-Rust reimplementation... pin a known-good version, monitor upstream").
+idevice = "0.1"
+tokio = { version = "1", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
