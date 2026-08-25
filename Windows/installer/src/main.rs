@@ -53,13 +53,27 @@ mod windows_impl {
     fn run_install() -> i32 {
         let dir = install_dir();
 
-        if let Err(err) = crate::driver_install::install_driver(
-            &dir.join("opendisplay-idd.inf"),
-            &crate::driver_install::PnpUtilInstaller,
-            &SetupApiInterfaceCheck,
-        ) {
-            eprintln!("windows-installer: driver install failed: {err}");
-            return 1;
+        let inf_path = dir.join("opendisplay-idd.inf");
+        if inf_path.exists() {
+            if let Err(err) = crate::driver_install::install_driver(
+                &inf_path,
+                &crate::driver_install::PnpUtilInstaller,
+                &SetupApiInterfaceCheck,
+            ) {
+                eprintln!("windows-installer: driver install failed: {err}");
+                return 1;
+            }
+        } else {
+            // The driver package isn't shipped in this build yet — proceed
+            // with core/tray setup rather than hard-failing the whole
+            // install over a component that was never packaged. Once the
+            // driver ships, its .inf will always be present alongside this
+            // binary, and this branch never triggers.
+            eprintln!(
+                "windows-installer: no driver package at {}; skipping driver install \
+                 (virtual display unavailable until it's shipped)",
+                inf_path.display()
+            );
         }
 
         if let Err(err) = crate::scheduled_task::register(

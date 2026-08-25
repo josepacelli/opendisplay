@@ -40,5 +40,8 @@ dist-ssr/
 
 # Rust build output (Windows/ Cargo workspace)
 Windows/target/
+
+# Compiled installer output (built by Inno Setup from Windows/packaging/OpenDisplay.iss)
+Windows/packaging/Output/
 /docs/
 /.idea/
