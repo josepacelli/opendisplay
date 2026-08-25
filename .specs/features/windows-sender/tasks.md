@@ -928,11 +928,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] On a real Windows 11 PC and a real iOS 16.4+ device on the same WiFi network, selecting the device creates a draggable extended display at native resolution
-- [ ] Rotation, retry-on-drop, and "another sender connected" behaviors are each exercised and confirmed
+- [ ] On a real Windows 11 PC and a real iOS 16.4+ device on the same WiFi network, selecting the device creates a draggable extended display at native resolution — **not performed, no hardware available**
+- [ ] Rotation, retry-on-drop, and "another sender connected" behaviors are each exercised and confirmed — **not performed, no hardware available**
 
 **Tests**: none
 **Gate**: manual
+
+**Gate: NOT RUN — procedure written to `Windows/docs/manual-test-wifi.md`; execution requires real Windows 11 hardware and a real iOS 16.4+ device, neither available in this session**
 
 ---
 
