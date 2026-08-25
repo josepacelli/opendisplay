@@ -1,0 +1,4 @@
+// Windows resource script embedding the tray icon into tray.exe. Referenced
+// by build.rs (embed-resource) and loaded at runtime via
+// LoadIconW(hinstance, PCWSTR(1 as _)) in main.rs's create_message_window.
+1 ICON "app.ico"

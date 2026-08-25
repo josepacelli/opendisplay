@@ -9,6 +9,11 @@ description = "windows-tray: the unprivileged OpenDisplay Windows sender tray UI
 # Added by T24 (ipc::connect client): the tray<->core message schema.
 ipc = { path = "../ipc" }
 
+[build-dependencies]
+# Embeds assets/app.ico into tray.exe as a Win32 resource (build.rs), so
+# the tray icon is the real OpenDisplay icon, not IDI_APPLICATION.
+embed-resource = "3"
+
 [target.'cfg(windows)'.dependencies]
 # Added by T25 (tray icon + device picker UI): Shell_NotifyIcon + popup
 # menu rendering for the tray icon.

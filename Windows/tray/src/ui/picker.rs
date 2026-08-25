@@ -70,14 +70,20 @@ impl DevicePicker {
 pub mod windows_impl {
     use super::DevicePicker;
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+    use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::Shell::{
         Shell_NotifyIconW, NOTIFYICONDATAW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, LoadIconW, SetForegroundWindow,
-        TrackPopupMenuEx, HICON, IDI_APPLICATION, MF_STRING, TPM_LEFTALIGN, TPM_RETURNCMD,
+        TrackPopupMenuEx, HICON, MF_STRING, TPM_LEFTALIGN, TPM_RETURNCMD,
     };
+
+    /// Resource ID `Windows/tray/assets/app.rc` embeds `app.ico` under
+    /// (`build.rs` links it into `tray.exe`) — the real OpenDisplay icon,
+    /// not the generic `IDI_APPLICATION` stand-in this used before.
+    const APP_ICON_RESOURCE_ID: usize = 1;
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -88,7 +94,8 @@ pub mod windows_impl {
     /// clicks/right-clicks (the standard Win32 tray-icon pattern).
     pub fn add_tray_icon(hwnd: HWND, callback_message: u32) -> windows::core::Result<()> {
         unsafe {
-            let icon: HICON = LoadIconW(None, IDI_APPLICATION)?;
+            let hinstance = HINSTANCE::from(GetModuleHandleW(None)?);
+            let icon: HICON = LoadIconW(hinstance, PCWSTR(APP_ICON_RESOURCE_ID as *const u16))?;
             let mut data = NOTIFYICONDATAW {
                 cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
                 hWnd: hwnd,
