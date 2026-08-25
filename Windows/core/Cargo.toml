@@ -34,4 +34,7 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
+    # Added by T18 (encode::start): the Media Foundation H.264 Encoder MFT
+    # pipeline (hardware-first, software fallback).
+    "Win32_Media_MediaFoundation",
 ] }

@@ -17,6 +17,7 @@
 mod capture;
 mod display;
 mod display_spec;
+mod encode;
 mod protocol_session;
 mod session_state;
 mod transport;

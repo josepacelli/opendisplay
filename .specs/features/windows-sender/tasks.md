@@ -562,12 +562,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Hardware MFT is used when `MFTEnumEx` finds one; software MFT is used otherwise, with no user-visible failure either way
-- [ ] Output frames carry 4-byte Annex B start codes with SPS/PPS on every IDR
-- [ ] Manual verification: a captured window drag streams as decodable H.264 to `tools/fake-receiver.swift`
+- [x] Hardware MFT is used when `MFTEnumEx` finds one; software MFT is used otherwise, with no user-visible failure either way — `find_h264_encoder` tries `MFT_ENUM_FLAG_HARDWARE` first and falls back to `MFT_ENUM_FLAG_SYNCMFT` on failure; verified by code inspection only
+- [x] Output frames carry 4-byte Annex B start codes with SPS/PPS on every IDR — relies on the H.264 Encoder MFT's own default Annex B output framing (no length-prefixed AVC framing requested); verified by code inspection only
+- [ ] Manual verification: a captured window drag streams as decodable H.264 to `tools/fake-receiver.swift` — **not performed, requires real Windows 11 hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
