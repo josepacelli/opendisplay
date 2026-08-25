@@ -6,3 +6,10 @@ license.workspace = true
 description = "windows-core: the elevated OpenDisplay Windows sender workhorse (transport, capture, encode, input)."
 
 [dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+] }
