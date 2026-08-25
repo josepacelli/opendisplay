@@ -21,6 +21,7 @@ mod cursor;
 mod encode;
 mod frame_sender;
 mod input;
+mod ipc_server;
 mod log;
 mod protocol_session;
 mod session_state;
