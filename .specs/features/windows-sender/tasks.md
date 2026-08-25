@@ -997,12 +997,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Tap/drag on the device controls the Windows pointer at the correct position
-- [ ] Two-finger scroll scrolls the focused Windows window
-- [ ] The Windows cursor renders on the device as it moves
+- [ ] Tap/drag on the device controls the Windows pointer at the correct position — **not performed, no hardware available**
+- [ ] Two-finger scroll scrolls the focused Windows window — **not performed, no hardware available**
+- [ ] The Windows cursor renders on the device as it moves — **not performed, no hardware available**
 
 **Tests**: none
 **Gate**: manual
+
+**Gate: NOT RUN — procedure written to `Windows/docs/manual-test-input.md`; execution requires a live session on real Windows 11 hardware and a real iOS 16.4+ device, neither available in this session**
 
 ---
 
