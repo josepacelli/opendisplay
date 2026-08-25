@@ -1066,6 +1066,8 @@ Fix items found by the independent Verifier (`.specs/features/windows-sender/val
 - [ ] Gate check passes: `cargo test -p core` / `cargo test -p protocol` — NOT RUN, see Gate line below
 - [ ] Test count: 9 tests written in `protocol_session.rs`, 1 in `protocol` crate
 
+**Status: partial.** Only the wire constants landed (`wire_message::PENCIL`/`PROXIMITY` in `Windows/protocol/src/lib.rs`, plus a test confirming they match `PROTOCOL.md`). The `protocol_session.rs` dispatcher itself (the actual ignore-without-erroring behavior) was interrupted mid-work when this fix round was stopped by the user — still open for the next fix round.
+
 **Tests**: unit
 **Gate**: quick
 

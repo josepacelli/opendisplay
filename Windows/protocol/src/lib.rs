@@ -40,6 +40,16 @@ pub mod wire_message {
     /// comment: "existing types (hello, ping, pong, touch, ...) stay inline
     /// for now") — sourced directly from `PROTOCOL.md` instead.
     pub const PING: &str = "ping";
+    /// Receiver -> sender (`pv` 3): Apple Pencil input. Out of scope for
+    /// this sender (spec Touch/cursor AC 4) — accepted and ignored, never
+    /// an error, per `PROTOCOL.md` Appendix A ("ignore every control
+    /// message it does not care about"). Not named in `Shared/Protocol.swift`'s
+    /// `WireMessage` enum — sourced directly from `PROTOCOL.md` §6.1/§7
+    /// instead.
+    pub const PENCIL: &str = "pencil";
+    /// Receiver -> sender (`pv` 3): stylus hover enter/leave. Same
+    /// out-of-scope/ignore treatment as [`PENCIL`].
+    pub const PROXIMITY: &str = "proximity";
 }
 
 /// Frame length header size in bytes (PROTOCOL.md §3).
@@ -178,6 +188,12 @@ mod tests {
     #[test]
     fn ping_wire_string_matches_protocol_md() {
         assert_eq!(wire_message::PING, "ping");
+    }
+
+    #[test]
+    fn pencil_and_proximity_wire_strings_match_protocol_md() {
+        assert_eq!(wire_message::PENCIL, "pencil");
+        assert_eq!(wire_message::PROXIMITY, "proximity");
     }
 
     // --- Framing: PROTOCOL.md §3. ---
