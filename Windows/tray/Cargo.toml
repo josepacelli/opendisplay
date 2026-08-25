@@ -6,3 +6,5 @@ license.workspace = true
 description = "windows-tray: the unprivileged OpenDisplay Windows sender tray UI."
 
 [dependencies]
+# Added by T24 (ipc::connect client): the tray<->core message schema.
+ipc = { path = "../ipc" }
