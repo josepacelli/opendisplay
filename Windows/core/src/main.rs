@@ -14,6 +14,7 @@
 //! windows-core start?" — is plain, unit-testable Rust with no OS call
 //! involved.
 
+mod display_spec;
 mod protocol_session;
 mod session_state;
 mod transport;
