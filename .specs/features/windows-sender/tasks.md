@@ -313,12 +313,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Script installs the driver package with one command on a dev machine with test-signing enabled
-- [ ] Script uninstalls cleanly, leaving no orphaned device
-- [ ] Comment in the script marks exactly where attestation-signed output replaces the test-signed one for release builds
+- [ ] Script installs the driver package with one command on a dev machine with test-signing enabled — **not performed, requires a real Windows 11 dev machine with the WDK/signtool/pnputil**
+- [ ] Script uninstalls cleanly, leaving no orphaned device — **not performed, requires a real Windows 11 dev machine**
+- [x] Comment in the script marks exactly where attestation-signed output replaces the test-signed one for release builds (see the "PRODUCTION SIGNING SWAP POINT" block in `install-dev.ps1`)
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 

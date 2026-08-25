@@ -203,10 +203,10 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | WSEND-10 | P1: USB extension | Tasks | In Tasks |
 | WSEND-11 | P1: USB extension | Tasks | In Tasks |
 | WSEND-12 | P1: USB extension | Tasks | In Tasks |
-| WSEND-13 | P1: Driver install | Tasks | In Tasks |
+| WSEND-13 | P1: Driver install | Tasks | Implementing |
 | WSEND-14 | P1: Driver install | Tasks | Implementing |
 | WSEND-15 | P1: Driver install | Tasks | In Tasks |
-| WSEND-16 | P1: Driver install | Tasks | In Tasks |
+| WSEND-16 | P1: Driver install | Tasks | Implementing |
 | WSEND-17 | P1: Driver install | Tasks | In Tasks |
 | WSEND-18 | P1: Driver install | Tasks | Implementing |
 | WSEND-19 | P1: Touch/cursor | Tasks | In Tasks |
