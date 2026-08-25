@@ -14,6 +14,8 @@
 //! windows-core start?" — is plain, unit-testable Rust with no OS call
 //! involved.
 
+mod transport;
+
 /// The process token integrity levels relevant to elevation, per
 /// `SECURITY_MANDATORY_*_RID` in the Windows security model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
