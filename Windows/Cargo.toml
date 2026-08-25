@@ -5,6 +5,7 @@ members = [
     "ipc",
     "core",
     "tray",
+    "installer",
 ]
 
 [workspace.package]

@@ -1,0 +1,15 @@
+[package]
+name = "installer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "windows-installer: one-shot elevated first-run setup (driver install, Scheduled Task registration, tray autostart) and uninstall."
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+# Added by T29 (driver install): pnputil-driven install + SetupAPI
+# device-interface verification.
+windows = { version = "0.58", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+] }

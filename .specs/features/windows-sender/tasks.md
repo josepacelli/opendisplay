@@ -833,12 +833,16 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] A successful install is followed by a verified-loaded device interface before returning
-- [ ] A failed install (corrupt package, wrong signature) returns a specific, actionable error, not a generic failure
-- [ ] Manual verification on a clean Windows 11 VM with Secure Boot on, per the Driver-install Independent Test
+- [x] A successful install is followed by a verified-loaded device interface before returning — `install_driver` only returns `Ok` after `interface_check.is_available()` succeeds (verified by code inspection only)
+- [x] A failed install (corrupt package, wrong signature) returns a specific, actionable error, not a generic failure — `DriverInstallError::{PackageNotFound, PnpUtilRejected, DeviceInterfaceNeverAppeared}`, each with a specific `Display` message (verified by code inspection only)
+- [ ] Manual verification on a clean Windows 11 VM with Secure Boot on, per the Driver-install Independent Test — **not performed, requires a real Windows 11 VM**
+
+**Note**: the `installer` crate (`Windows/installer/Cargo.toml`, `src/main.rs`) did not exist before this task — Phase 7 is the first to touch `Windows/installer/`, so it is scaffolded here (added to `Windows/Cargo.toml`'s workspace members), mirroring how T1 scaffolded the other four crates.
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
