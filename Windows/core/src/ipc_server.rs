@@ -174,24 +174,61 @@ pub mod windows_impl {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, HANDLE, LocalFree, HLOCAL};
     use windows::Win32::Security::Authorization::{
-        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+        ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+        SDDL_REVISION_1,
     };
-    use windows::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+    use windows::Win32::Security::{
+        GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TokenUser, TOKEN_QUERY,
+        TOKEN_USER,
+    };
     use windows::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
     use windows::Win32::System::Pipes::{
         CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
     };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-    /// The named pipe's ACL: full access to the current logon session's
-    /// owner (`OW`/`BA` in SDDL terms restrict it to the account that owns
-    /// the process token — the current user), denying everyone else. Using
-    /// an owner-relative SDDL string (`D:(A;;GA;;;OW)`) rather than a
-    /// hard-coded SID means it always resolves to whichever user account
-    /// `windows-core` is running as, without querying the SID separately.
-    const PIPE_SECURITY_DESCRIPTOR_SDDL: &str = "D:(A;;GA;;;OW)";
+    /// The current process's `TokenUser` SID, formatted as an SDDL SID
+    /// string (`S-1-5-...`).
+    ///
+    /// Deliberately *not* the owner-relative `OW` SDDL placeholder this
+    /// module used before: under UAC, an elevated process's token is a
+    /// split token whose default *owner* is the `Administrators` group,
+    /// not the signed-in user — `windows-core` runs elevated
+    /// (`RunLevel=HighestAvailable`), so `D:(A;;GA;;;OW)` silently granted
+    /// the pipe to `Administrators`, not to the user. `windows-tray` runs
+    /// unelevated, and an unelevated split token carries `Administrators`
+    /// only as a *deny-only* group membership (confirmed live: a real
+    /// `windows-tray` process got `ERROR_ACCESS_DENIED` opening the pipe,
+    /// surfacing as an incorrect `CoreNotRunning`, even with `windows-core`
+    /// actually running and listening). `TokenUser`, unlike the token's
+    /// owner, is the same real user SID on both the elevated and
+    /// unelevated split token, so it is the correct principal to grant the
+    /// ACL to.
+    fn current_user_sid_string() -> windows::core::Result<String> {
+        unsafe {
+            let process = GetCurrentProcess();
+            let mut token = HANDLE::default();
+            OpenProcessToken(process, TOKEN_QUERY, &mut token)?;
+
+            let mut len = 0u32;
+            let _ = GetTokenInformation(token, TokenUser, None, 0, &mut len);
+            let mut buf = vec![0u8; len as usize];
+            let result = GetTokenInformation(token, TokenUser, Some(buf.as_mut_ptr() as *mut _), len, &mut len);
+            let _ = CloseHandle(token);
+            result?;
+
+            let token_user = &*(buf.as_ptr() as *const TOKEN_USER);
+            let mut sid_string = windows::core::PWSTR::null();
+            ConvertSidToStringSidW(token_user.User.Sid, &mut sid_string)?;
+            let result = sid_string.to_string().map_err(|_| windows::core::Error::from_win32());
+            let _ = LocalFree(HLOCAL(sid_string.0 as *mut _));
+            result
+        }
+    }
 
     fn build_security_attributes() -> windows::core::Result<SECURITY_ATTRIBUTES> {
-        let sddl: Vec<u16> = PIPE_SECURITY_DESCRIPTOR_SDDL
+        let sid = current_user_sid_string()?;
+        let sddl: Vec<u16> = format!("D:(A;;GA;;;{sid})")
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
