@@ -173,3 +173,97 @@ mod windows_impl {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FakeInstaller {
+        exit_code: std::io::Result<i32>,
+    }
+
+    impl DriverPackageInstaller for FakeInstaller {
+        fn install(&self, _inf_path: &Path) -> std::io::Result<i32> {
+            match &self.exit_code {
+                Ok(code) => Ok(*code),
+                Err(err) => Err(std::io::Error::new(err.kind(), err.to_string())),
+            }
+        }
+    }
+
+    struct FakeInterfaceCheck(bool);
+
+    impl DeviceInterfaceCheck for FakeInterfaceCheck {
+        fn is_available(&self) -> bool {
+            self.0
+        }
+    }
+
+    #[test]
+    fn a_missing_package_yields_package_not_found() {
+        let missing = Path::new("Z:/definitely/not/a/real/path/opendisplay-idd.inf");
+
+        let result = install_driver(missing, &FakeInstaller { exit_code: Ok(0) }, &FakeInterfaceCheck(true));
+
+        assert_eq!(
+            result,
+            Err(DriverInstallError::PackageNotFound { path: missing.display().to_string() })
+        );
+    }
+
+    #[test]
+    fn a_pnputil_spawn_failure_yields_pnputil_rejected() {
+        let existing = std::env::current_exe().unwrap();
+
+        let result = install_driver(
+            &existing,
+            &FakeInstaller { exit_code: Err(std::io::Error::other("spawn failed")) },
+            &FakeInterfaceCheck(true),
+        );
+
+        assert_eq!(result, Err(DriverInstallError::PnpUtilRejected { exit_code: -1 }));
+    }
+
+    #[test]
+    fn a_nonzero_pnputil_exit_code_yields_pnputil_rejected() {
+        let existing = std::env::current_exe().unwrap();
+
+        let result = install_driver(&existing, &FakeInstaller { exit_code: Ok(3) }, &FakeInterfaceCheck(true));
+
+        assert_eq!(result, Err(DriverInstallError::PnpUtilRejected { exit_code: 3 }));
+    }
+
+    #[test]
+    fn a_successful_pnputil_run_with_no_device_interface_yields_never_appeared() {
+        let existing = std::env::current_exe().unwrap();
+
+        let result = install_driver(&existing, &FakeInstaller { exit_code: Ok(0) }, &FakeInterfaceCheck(false));
+
+        assert_eq!(result, Err(DriverInstallError::DeviceInterfaceNeverAppeared));
+    }
+
+    #[test]
+    fn a_successful_install_followed_by_a_verified_interface_succeeds() {
+        let existing = std::env::current_exe().unwrap();
+
+        let result = install_driver(&existing, &FakeInstaller { exit_code: Ok(0) }, &FakeInterfaceCheck(true));
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn each_error_variant_has_specific_actionable_display_text() {
+        assert_eq!(
+            DriverInstallError::PackageNotFound { path: "C:\\x\\y.inf".to_string() }.to_string(),
+            "driver package not found at 'C:\\x\\y.inf' — reinstall the app"
+        );
+        assert_eq!(
+            DriverInstallError::PnpUtilRejected { exit_code: 5 }.to_string(),
+            "Windows rejected the driver package (pnputil exit code 5) — it may be corrupt or improperly signed"
+        );
+        assert_eq!(
+            DriverInstallError::DeviceInterfaceNeverAppeared.to_string(),
+            "the driver package installed but its device interface never became available — it may have failed to load"
+        );
+    }
+}

@@ -251,3 +251,119 @@ mod windows_impl {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FakeDriverRemover(Result<(), String>);
+    impl DriverRemover for FakeDriverRemover {
+        fn remove(&self) -> Result<(), String> {
+            self.0.clone()
+        }
+    }
+
+    struct FakeScheduledTaskRemover(Result<(), String>);
+    impl ScheduledTaskRemover for FakeScheduledTaskRemover {
+        fn remove(&self, _task_name: &str) -> Result<(), String> {
+            self.0.clone()
+        }
+    }
+
+    struct FakeAutostartRemover(Result<(), String>);
+    impl AutostartRemover for FakeAutostartRemover {
+        fn remove(&self, _value_name: &str) -> Result<(), String> {
+            self.0.clone()
+        }
+    }
+
+    struct FakeInterfaceCheck(bool);
+    impl DeviceInterfaceCheck for FakeInterfaceCheck {
+        fn is_available(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn ok_driver() -> FakeDriverRemover {
+        FakeDriverRemover(Ok(()))
+    }
+    fn ok_task() -> FakeScheduledTaskRemover {
+        FakeScheduledTaskRemover(Ok(()))
+    }
+    fn ok_autostart() -> FakeAutostartRemover {
+        FakeAutostartRemover(Ok(()))
+    }
+
+    #[test]
+    fn a_driver_removal_failure_short_circuits_with_driver_removal_failed() {
+        let result = uninstall(
+            &FakeDriverRemover(Err("boom".to_string())),
+            &ok_task(),
+            &ok_autostart(),
+            &FakeInterfaceCheck(false),
+        );
+
+        assert_eq!(result, Err(UninstallError::DriverRemovalFailed { detail: "boom".to_string() }));
+    }
+
+    #[test]
+    fn a_scheduled_task_removal_failure_short_circuits_with_scheduled_task_removal_failed() {
+        let result = uninstall(
+            &ok_driver(),
+            &FakeScheduledTaskRemover(Err("boom".to_string())),
+            &ok_autostart(),
+            &FakeInterfaceCheck(false),
+        );
+
+        assert_eq!(
+            result,
+            Err(UninstallError::ScheduledTaskRemovalFailed { detail: "boom".to_string() })
+        );
+    }
+
+    #[test]
+    fn an_autostart_removal_failure_short_circuits_with_autostart_removal_failed() {
+        let result = uninstall(
+            &ok_driver(),
+            &ok_task(),
+            &FakeAutostartRemover(Err("boom".to_string())),
+            &FakeInterfaceCheck(false),
+        );
+
+        assert_eq!(result, Err(UninstallError::AutostartRemovalFailed { detail: "boom".to_string() }));
+    }
+
+    #[test]
+    fn every_removal_succeeding_but_the_device_interface_still_present_is_orphaned() {
+        let result = uninstall(&ok_driver(), &ok_task(), &ok_autostart(), &FakeInterfaceCheck(true));
+
+        assert_eq!(result, Err(UninstallError::OrphanedDeviceInterfaceRemains));
+    }
+
+    #[test]
+    fn every_removal_succeeding_with_no_device_interface_remaining_succeeds() {
+        let result = uninstall(&ok_driver(), &ok_task(), &ok_autostart(), &FakeInterfaceCheck(false));
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn each_error_variant_has_specific_actionable_display_text() {
+        assert_eq!(
+            UninstallError::DriverRemovalFailed { detail: "x".to_string() }.to_string(),
+            "failed to remove the driver package: x"
+        );
+        assert_eq!(
+            UninstallError::ScheduledTaskRemovalFailed { detail: "x".to_string() }.to_string(),
+            "failed to remove the windows-core Scheduled Task: x"
+        );
+        assert_eq!(
+            UninstallError::AutostartRemovalFailed { detail: "x".to_string() }.to_string(),
+            "failed to remove the windows-tray autostart entry: x"
+        );
+        assert_eq!(
+            UninstallError::OrphanedDeviceInterfaceRemains.to_string(),
+            "the driver's device interface is still present after uninstall (orphaned virtual display)"
+        );
+    }
+}

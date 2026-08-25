@@ -131,3 +131,65 @@ pub mod windows_impl {
         unsafe { Shell_NotifyIconW(NIM_MODIFY, &data).ok() }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- status_for_connect_failure ---
+
+    #[test]
+    fn a_core_not_running_outcome_yields_core_not_running_status() {
+        let outcome: ConnectOutcome<()> = ConnectOutcome::CoreNotRunning;
+        assert_eq!(status_for_connect_failure(&outcome), Some(TrayStatus::CoreNotRunning));
+    }
+
+    #[test]
+    fn a_connected_outcome_yields_no_status_change() {
+        let outcome = ConnectOutcome::Connected(());
+        assert_eq!(status_for_connect_failure(&outcome), None);
+    }
+
+    // --- status_for_message ---
+
+    #[test]
+    fn a_device_list_message_yields_no_status_change() {
+        assert_eq!(status_for_message(&CoreToTray::DeviceList(vec![])), None);
+    }
+
+    #[test]
+    fn a_connected_status_message_yields_connected_with_its_fields() {
+        let msg = CoreToTray::Status {
+            device: Some("iPad".to_string()),
+            transport: Some(Transport::Wifi),
+            connected: true,
+            stats: None,
+        };
+        assert_eq!(
+            status_for_message(&msg),
+            Some(TrayStatus::Connected {
+                device: Some("iPad".to_string()),
+                transport: Some(Transport::Wifi),
+                stats: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_disconnected_status_message_yields_disconnected() {
+        let msg = CoreToTray::Status { device: None, transport: None, connected: false, stats: None };
+        assert_eq!(status_for_message(&msg), Some(TrayStatus::Disconnected));
+    }
+
+    #[test]
+    fn a_not_elevated_error_message_yields_not_elevated_status() {
+        let msg = CoreToTray::Error { message: NOT_ELEVATED_MESSAGE.to_string() };
+        assert_eq!(status_for_message(&msg), Some(TrayStatus::NotElevated));
+    }
+
+    #[test]
+    fn an_unrecognized_error_message_yields_no_status_change() {
+        let msg = CoreToTray::Error { message: "something else".to_string() };
+        assert_eq!(status_for_message(&msg), None);
+    }
+}

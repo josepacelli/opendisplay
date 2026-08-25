@@ -1103,17 +1103,19 @@ Fix items found by the independent Verifier (`.specs/features/windows-sender/val
 **Requirement**: Verifier gap 4 (Minor)
 
 **Done when**:
-- [ ] `cursor::diff_snapshots` has tests covering no-previous-snapshot, position/visibility change, no change, and icon change (with and without a successful PNG encode)
-- [ ] `status::{status_for_connect_failure,status_for_message}` have tests for each of the four `TrayStatus` states
-- [ ] `first_run::FirstRunFlow::{apply,decline}` have tests for offer/decline/re-offer and "unrelated message leaves state untouched"
-- [ ] `driver_install::install_driver` has tests for each `DriverInstallError` branch plus each variant's `Display` text
-- [ ] `uninstall::uninstall` has tests for each `UninstallError` branch plus each variant's `Display` text
-- [ ] Gate check passes: `cargo test --workspace` — NOT RUN, see Gate line below
+- [x] `cursor::diff_snapshots` has tests covering no-previous-snapshot, position/visibility change, no change, and icon change (with and without a successful PNG encode)
+- [x] `status::{status_for_connect_failure,status_for_message}` have tests for each of the four `TrayStatus` states
+- [x] `first_run::FirstRunFlow::{apply,decline}` have tests for offer/decline/re-offer and "unrelated message leaves state untouched"
+- [x] `driver_install::install_driver` has tests for each `DriverInstallError` branch plus each variant's `Display` text
+- [x] `uninstall::uninstall` has tests for each `UninstallError` branch plus each variant's `Display` text
+- [x] Gate check passes: `cargo test --workspace` — PASS, see Gate line below
+
+**Status: done.**
 
 **Tests**: unit
 **Gate**: quick
 
-**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+**Gate: PASS — `cargo test --workspace` on Windows (rustup stable-msvc + VS Build Tools 17.14). core: 88 passed; installer: 12 passed; ipc: 10 passed; protocol: 16 passed; tray: 25 passed. 0 failed.**
 
 ---
 

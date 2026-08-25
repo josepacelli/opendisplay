@@ -111,3 +111,91 @@ impl InstallerLauncher for WindowsInstallerLauncher {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn driver_missing_error() -> CoreToTray {
+        CoreToTray::Error { message: DRIVER_MISSING_MESSAGE.to_string() }
+    }
+
+    #[test]
+    fn a_fresh_flow_has_no_state_to_render() {
+        let flow = FirstRunFlow::new();
+        assert_eq!(flow.state(), None);
+    }
+
+    #[test]
+    fn a_driver_missing_error_offers_install() {
+        let mut flow = FirstRunFlow::new();
+
+        flow.apply(&driver_missing_error());
+
+        assert_eq!(flow.state(), Some(FirstRunState::OfferInstall));
+    }
+
+    #[test]
+    fn an_unrelated_message_leaves_the_state_untouched() {
+        let mut flow = FirstRunFlow::new();
+        flow.apply(&driver_missing_error());
+
+        flow.apply(&CoreToTray::Error { message: "some other error".to_string() });
+        assert_eq!(flow.state(), Some(FirstRunState::OfferInstall));
+
+        flow.apply(&CoreToTray::DeviceList(vec![]));
+        assert_eq!(flow.state(), Some(FirstRunState::OfferInstall));
+    }
+
+    #[test]
+    fn an_unrelated_message_on_a_fresh_flow_still_offers_nothing() {
+        let mut flow = FirstRunFlow::new();
+
+        flow.apply(&CoreToTray::DeviceList(vec![]));
+
+        assert_eq!(flow.state(), None);
+    }
+
+    #[test]
+    fn declining_while_offering_install_moves_to_setup_incomplete_declined() {
+        let mut flow = FirstRunFlow::new();
+        flow.apply(&driver_missing_error());
+
+        flow.decline();
+
+        assert_eq!(flow.state(), Some(FirstRunState::SetupIncompleteDeclined));
+    }
+
+    #[test]
+    fn declining_with_no_active_offer_does_nothing() {
+        let mut flow = FirstRunFlow::new();
+
+        flow.decline();
+
+        assert_eq!(flow.state(), None);
+    }
+
+    #[test]
+    fn a_later_driver_missing_error_re_offers_install_after_a_decline() {
+        let mut flow = FirstRunFlow::new();
+        flow.apply(&driver_missing_error());
+        flow.decline();
+        assert_eq!(flow.state(), Some(FirstRunState::SetupIncompleteDeclined));
+
+        flow.apply(&driver_missing_error());
+
+        assert_eq!(flow.state(), Some(FirstRunState::OfferInstall));
+    }
+
+    #[test]
+    fn a_brand_new_flow_re_offers_with_no_memory_of_a_prior_decline() {
+        let mut declined = FirstRunFlow::new();
+        declined.apply(&driver_missing_error());
+        declined.decline();
+
+        let fresh = FirstRunFlow::new();
+
+        assert_eq!(fresh.state(), None);
+        assert_eq!(declined.state(), Some(FirstRunState::SetupIncompleteDeclined));
+    }
+}

@@ -266,6 +266,103 @@ pub struct CursorSnapshotHandle(CursorSnapshot);
 #[cfg(windows)]
 pub use windows_impl::poll;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn display() -> DisplaySpec {
+        DisplaySpec {
+            width_px: 1000,
+            height_px: 2000,
+            scale_factor: 2.0,
+            orientation: crate::display_spec::Orientation::Portrait,
+        }
+    }
+
+    fn snapshot(x_px: i32, y_px: i32, visible: bool, icon: Option<isize>) -> CursorSnapshot {
+        CursorSnapshot { x_px, y_px, visible, icon: icon.map(CursorIdentity) }
+    }
+
+    #[test]
+    fn no_previous_snapshot_always_yields_a_cursor_event() {
+        let current = snapshot(500, 1000, true, None);
+
+        let events = diff_snapshots(&display(), None, current, |_| None);
+
+        assert_eq!(
+            events,
+            vec![CursorEvent::Cursor { position: Some((0.5, 0.5)), visible: true }]
+        );
+    }
+
+    #[test]
+    fn a_position_change_yields_a_cursor_event_with_the_new_normalized_position() {
+        let previous = snapshot(0, 0, true, None);
+        let current = snapshot(1000, 2000, true, None);
+
+        let events = diff_snapshots(&display(), Some(previous), current, |_| None);
+
+        assert_eq!(
+            events,
+            vec![CursorEvent::Cursor { position: Some((1.0, 1.0)), visible: true }]
+        );
+    }
+
+    #[test]
+    fn a_visibility_change_yields_a_cursor_event_with_no_position_when_hidden() {
+        let previous = snapshot(500, 1000, true, None);
+        let current = snapshot(500, 1000, false, None);
+
+        let events = diff_snapshots(&display(), Some(previous), current, |_| None);
+
+        assert_eq!(events, vec![CursorEvent::Cursor { position: None, visible: false }]);
+    }
+
+    #[test]
+    fn no_change_yields_no_events() {
+        let previous = snapshot(500, 1000, true, Some(7));
+        let current = snapshot(500, 1000, true, Some(7));
+
+        let events = diff_snapshots(&display(), Some(previous), current, |_| {
+            panic!("png_for_icon must not be called when the icon hasn't changed")
+        });
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn an_icon_change_with_a_successful_png_encode_yields_a_cursor_img_event() {
+        let previous = snapshot(500, 1000, true, Some(1));
+        let current = snapshot(500, 1000, true, Some(2));
+
+        let events = diff_snapshots(&display(), Some(previous), current, |icon| {
+            assert_eq!(icon, CursorIdentity(2));
+            Some((vec![1, 2, 3], 0.1, 0.2, 0.3, 0.4))
+        });
+
+        assert_eq!(
+            events,
+            vec![CursorEvent::CursorImg {
+                png: vec![1, 2, 3],
+                width_norm: 0.1,
+                height_norm: 0.2,
+                hotspot_x_norm: 0.3,
+                hotspot_y_norm: 0.4,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_icon_change_with_a_failed_png_encode_yields_no_cursor_img_event() {
+        let previous = snapshot(500, 1000, true, Some(1));
+        let current = snapshot(500, 1000, true, Some(2));
+
+        let events = diff_snapshots(&display(), Some(previous), current, |_| None);
+
+        assert!(events.is_empty());
+    }
+}
+
 #[cfg(not(windows))]
 #[allow(dead_code)]
 fn _unused(_: &DisplaySpec) {}
