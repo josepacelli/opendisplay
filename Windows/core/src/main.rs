@@ -19,6 +19,7 @@ mod display;
 mod display_spec;
 mod encode;
 mod frame_sender;
+mod input;
 mod protocol_session;
 mod session_state;
 mod transport;

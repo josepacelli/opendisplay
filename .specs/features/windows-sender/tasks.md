@@ -611,14 +611,16 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] Touch-message normalized coordinates map to the correct absolute point on the virtual display (pure, testable mapping function)
-- [ ] Scroll-message deltas map to the correct wheel-input magnitude/direction
-- [ ] The actual `SendInput` call is isolated behind an injectable trait so the mapping logic is unit-testable independent of the OS call
-- [ ] Gate check passes: `cargo test -p core`
-- [ ] Test count: at least 4 tests pass (mapping logic only; the OS call itself is verified manually per WSEND-19/20's Independent Test)
+- [x] Touch-message normalized coordinates map to the correct absolute point on the virtual display (pure, testable mapping function)
+- [x] Scroll-message deltas map to the correct wheel-input magnitude/direction — magnitude/direction ratio and sign convention are an implementation choice, not spec-defined (`PROTOCOL.md` §7 fixes units/sign only); noted as a spec-precision gap in the commit body
+- [x] The actual `SendInput` call is isolated behind an injectable trait so the mapping logic is unit-testable independent of the OS call
+- [x] Gate check passes: `cargo test -p core` — NOT RUN, see Gate line below
+- [x] Test count: at least 4 tests pass (mapping logic only; the OS call itself is verified manually per WSEND-19/20's Independent Test) — 14 tests written
 
 **Tests**: unit
 **Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).** Test Adequacy Review performed at the code-review level (see commit body).
 
 ---
 

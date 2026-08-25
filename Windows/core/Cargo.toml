@@ -37,4 +37,8 @@ windows = { version = "0.58", features = [
     # Added by T18 (encode::start): the Media Foundation H.264 Encoder MFT
     # pipeline (hardware-first, software fallback).
     "Win32_Media_MediaFoundation",
+    # Added by T20 (input::inject_touch/inject_scroll): the real SendInput
+    # call behind the InputInjector trait.
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
 ] }
