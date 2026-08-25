@@ -951,11 +951,13 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] A device connected with a known-good data cable is detected and streams as a display without WiFi involved
-- [ ] Unplug-mid-session and USB-preferred-over-WiFi behaviors are each exercised and confirmed
+- [ ] A device connected with a known-good data cable is detected and streams as a display without WiFi involved — **not performed, no hardware available**
+- [ ] Unplug-mid-session and USB-preferred-over-WiFi behaviors are each exercised and confirmed — **not performed, no hardware available**
 
 **Tests**: none
 **Gate**: manual
+
+**Gate: NOT RUN — procedure written to `Windows/docs/manual-test-usb.md`; execution requires real Windows 11 hardware and a real iOS 16.4+ device, neither available in this session**
 
 ---
 
