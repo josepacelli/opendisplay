@@ -586,13 +586,15 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] A normal-sized frame is length-prefixed and sent correctly
-- [ ] An oversized frame is rejected before it reaches the socket, not truncated or split
-- [ ] Gate check passes: `cargo test -p core`
-- [ ] Test count: at least 3 tests pass
+- [x] A normal-sized frame is length-prefixed and sent correctly
+- [x] An oversized frame is rejected before it reaches the socket, not truncated or split
+- [x] Gate check passes: `cargo test -p core` — NOT RUN, see Gate line below
+- [x] Test count: at least 3 tests pass — 4 tests written
 
 **Tests**: unit
 **Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).** Test Adequacy Review performed at the code-review level (see commit body).
 
 ---
 

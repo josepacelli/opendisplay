@@ -193,7 +193,7 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | --- | --- | --- | --- |
 | WSEND-01 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-02 | P1: WiFi extension | Tasks | Implementing |
-| WSEND-03 | P1: WiFi extension | Tasks | In Tasks |
+| WSEND-03 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-04 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-05 | P1: WiFi extension | Tasks | In Tasks |
 | WSEND-06 | P1: WiFi extension | Tasks | Implementing |
