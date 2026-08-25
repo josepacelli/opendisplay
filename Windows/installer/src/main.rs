@@ -1,3 +1,8 @@
+// Always invoked non-interactively (Setup.exe's [Run]/[UninstallRun], or
+// windows-tray's first-run launch) — no console window should flash for
+// it either.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! windows-installer entry point: one-shot elevated first-run setup
 //! (driver install, Scheduled Task registration, tray autostart) and the
 //! uninstall path, per design.md's `windows-installer` component (FIX6,

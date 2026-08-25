@@ -1,3 +1,8 @@
+// windows-core runs unattended, elevated, at logon — no console window
+// should ever flash for it, regardless of how it's launched (Scheduled
+// Task, double-click, or the installer).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! windows-core entry point: bootstrap + elevation self-check.
 //!
 //! Design Risk mitigation ("UIPI silent failure if `windows-core` ever loses

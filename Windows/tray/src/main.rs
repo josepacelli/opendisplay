@@ -1,3 +1,8 @@
+// A tray app has no console UI — without this, launching it (autostart,
+// Start Menu, or double-click) flashes a cmd window for the duration of
+// the process.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! windows-tray entry point.
 //!
 //! Wires `ipc_client` (T24), the device picker/status/first-run UI
