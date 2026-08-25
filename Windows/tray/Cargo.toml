@@ -1,0 +1,8 @@
+[package]
+name = "tray"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "windows-tray: the unprivileged OpenDisplay Windows sender tray UI."
+
+[dependencies]

@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "protocol",
+    "ipc",
+    "core",
+    "tray",
+]
+
+[workspace.package]
+edition = "2021"
+license = "GPL-3.0-only"
