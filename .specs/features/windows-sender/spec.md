@@ -211,7 +211,7 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | WSEND-18 | P1: Driver install | Tasks | Implementing |
 | WSEND-19 | P1: Touch/cursor | Tasks | Implementing |
 | WSEND-20 | P1: Touch/cursor | Tasks | Implementing |
-| WSEND-21 | P1: Touch/cursor | Tasks | In Tasks |
+| WSEND-21 | P1: Touch/cursor | Tasks | Implementing |
 | WSEND-22 | P1: Touch/cursor | Tasks | In Tasks |
 | WSEND-23 | P2: Multi-device | - | Pending |
 | WSEND-24 | P2: Multi-device | - | Pending |

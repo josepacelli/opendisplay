@@ -41,4 +41,9 @@ windows = { version = "0.58", features = [
     # call behind the InputInjector trait.
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
+    # Added by T21 (cursor::watch): GetCursorInfo/GetIconInfo, GDI DIB
+    # extraction, and WIC PNG encoding of the cursor sprite.
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
 ] }

@@ -17,6 +17,7 @@
 mod capture;
 mod display;
 mod display_spec;
+mod cursor;
 mod encode;
 mod frame_sender;
 mod input;

@@ -637,12 +637,14 @@ T35 → T36
 - Skill: NONE
 
 **Done when**:
-- [ ] A cursor position change on the virtual display produces a `cursor` message
-- [ ] A cursor image change produces a `cursorImg` message
-- [ ] Manual verification: moving the Windows pointer shows up on the connected device (spec Touch/cursor Independent Test)
+- [x] A cursor position change on the virtual display produces a `cursor` message — `diff_snapshots` compares consecutive `GetCursorInfo` polls and emits `CursorEvent::Cursor` on any position/visibility change; verified by code inspection only
+- [x] A cursor image change produces a `cursorImg` message — icon-handle identity change triggers `GetIconInfo` + GDI `GetDIBits` + WIC PNG encoding into `CursorEvent::CursorImg`; verified by code inspection only
+- [ ] Manual verification: moving the Windows pointer shows up on the connected device (spec Touch/cursor Independent Test) — **not performed, requires real Windows 11 + iOS hardware**
 
 **Tests**: none
 **Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
 
 ---
 
