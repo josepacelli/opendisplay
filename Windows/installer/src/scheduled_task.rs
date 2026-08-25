@@ -92,7 +92,7 @@ impl TaskScheduler for ComTaskScheduler {
 #[cfg(windows)]
 mod windows_impl {
     use super::*;
-    use windows::core::{BSTR, VARIANT};
+    use windows::core::{Interface, BSTR, VARIANT};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
     };

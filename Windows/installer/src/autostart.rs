@@ -108,7 +108,7 @@ mod windows_impl {
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(subkey.as_ptr()),
-                None,
+                0,
                 None,
                 REG_OPTION_NON_VOLATILE,
                 KEY_SET_VALUE,
@@ -124,7 +124,7 @@ mod windows_impl {
                 data.as_ptr() as *const u8,
                 data.len() * std::mem::size_of::<u16>(),
             );
-            let result = RegSetValueExW(hkey, PCWSTR(name.as_ptr()), None, REG_SZ, Some(data_bytes));
+            let result = RegSetValueExW(hkey, PCWSTR(name.as_ptr()), 0, REG_SZ, Some(data_bytes));
             let _ = RegCloseKey(hkey);
             result.ok()
         }

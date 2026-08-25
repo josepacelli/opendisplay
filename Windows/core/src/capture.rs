@@ -35,6 +35,7 @@ mod windows_impl {
         IDXGIAdapter, IDXGIDevice, IDXGIOutput1, IDXGIOutputDuplication, IDXGIResource,
         DXGI_OUTDUPL_FRAME_INFO, DXGI_OUTPUT_DESC,
     };
+    use windows::core::Interface;
 
     /// One GPU-resident captured frame, ready to hand to `encode::start`
     /// (T18). The cursor is not composited into `texture` — DXGI Desktop
@@ -70,8 +71,7 @@ mod windows_impl {
                 Err(_) => break, // DXGI_ERROR_NOT_FOUND: no more outputs
             };
             let output1: IDXGIOutput1 = output.cast()?;
-            let mut desc = DXGI_OUTPUT_DESC::default();
-            unsafe { output1.GetDesc(&mut desc)? };
+            let desc = unsafe { output1.GetDesc()? };
 
             let width = (desc.DesktopCoordinates.right - desc.DesktopCoordinates.left) as u32;
             let height = (desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top) as u32;

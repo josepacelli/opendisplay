@@ -204,11 +204,14 @@ mod windows_impl {
                 CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
             let stream = factory.CreateStream()?;
             stream.InitializeFromMemory(&mut Vec::new())?; // grows via IStream::Write below
-            let encoder = factory.CreateEncoder(&GUID_ContainerFormatPng, None)?;
+            let encoder = factory.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
             encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
             let frame = {
                 let mut frame = None;
-                encoder.CreateNewFrame(&mut frame, &mut None)?;
+                let mut props: Option<
+                    windows::Win32::System::Com::StructuredStorage::IPropertyBag2,
+                > = None;
+                encoder.CreateNewFrame(&mut frame, &mut props)?;
                 frame.expect("CreateNewFrame succeeded without a frame")
             };
             frame.Initialize(None)?;
@@ -225,7 +228,9 @@ mod windows_impl {
             let mut chunk = [0u8; 4096];
             loop {
                 let mut read = 0u32;
-                stream.Read(chunk.as_mut_ptr() as *mut _, chunk.len() as u32, Some(&mut read))?;
+                stream
+                    .Read(chunk.as_mut_ptr() as *mut _, chunk.len() as u32, Some(&mut read as *mut u32))
+                    .ok()?;
                 if read == 0 {
                     break;
                 }

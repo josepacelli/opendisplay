@@ -232,7 +232,7 @@ mod windows_impl {
             RegOpenKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(subkey.as_ptr()),
-                None,
+                0,
                 KEY_SET_VALUE,
                 &mut hkey,
             )

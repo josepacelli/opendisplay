@@ -17,7 +17,7 @@ serde_json = "1"
 mdns-sd = "0.11"
 # Pinned per design.md's Risks & Concerns ("idevice is a young, independent
 # pure-Rust reimplementation... pin a known-good version, monitor upstream").
-idevice = "0.1"
+idevice = { version = "0.1", features = ["usbmuxd"] }
 tokio = { version = "1", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -48,6 +48,7 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Imaging",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     # Added by T23 (ipc::serve): the named pipe + its user-SID-restricted
     # security descriptor.
     "Win32_System_Pipes",

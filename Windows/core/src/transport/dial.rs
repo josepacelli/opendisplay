@@ -109,7 +109,7 @@ impl Dialer for RealDialer {
                     .into_iter()
                     .find(|d| d.udid == usb_id)
                     .ok_or_else(|| {
-                        idevice::IdeviceError::Custom(format!(
+                        idevice::IdeviceError::InternalError(format!(
                             "usb device {usb_id} not found in usbmuxd's device list"
                         ))
                     })?;

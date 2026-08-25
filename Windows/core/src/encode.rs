@@ -26,7 +26,7 @@ use crate::display_spec::DisplaySpec;
 mod windows_impl {
     use super::DisplaySpec;
     use crate::capture::CapturedFrame;
-    use windows::core::GUID;
+    use windows::core::{Interface, GUID};
     use windows::Win32::Media::MediaFoundation::{
         IMFActivate, IMFMediaBuffer, IMFSample, IMFTransform, MFCreateDXGISurfaceBuffer,
         MFCreateMediaType, MFCreateSample, MFStartup, MFTEnumEx, MFVideoFormat_H264,
@@ -60,7 +60,9 @@ mod windows_impl {
 
     /// Enumerates registered H.264 encoder MFTs matching `flags`, returning
     /// the first one `ActivateObject` succeeds on.
-    fn find_encoder(flags: u32) -> windows::core::Result<IMFTransform> {
+    fn find_encoder(
+        flags: windows::Win32::Media::MediaFoundation::MFT_ENUM_FLAG,
+    ) -> windows::core::Result<IMFTransform> {
         let output_type = MFT_REGISTER_TYPE_INFO {
             guidMajorType: MFMediaType_Video,
             guidSubtype: MFVideoFormat_H264,
@@ -101,8 +103,8 @@ mod windows_impl {
     /// ("hardware encoder unavailable... fall back to a software H.264
     /// encoder... rather than failing to stream").
     fn find_h264_encoder() -> windows::core::Result<IMFTransform> {
-        find_encoder((MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER).0)
-            .or_else(|_| find_encoder(MFT_ENUM_FLAG_SYNCMFT.0))
+        find_encoder(MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER)
+            .or_else(|_| find_encoder(MFT_ENUM_FLAG_SYNCMFT))
     }
 
     fn configure_media_types(transform: &IMFTransform, spec: &DisplaySpec) -> windows::core::Result<()> {
@@ -175,8 +177,7 @@ mod windows_impl {
 
                 match result {
                     Ok(()) => {
-                        let out_sample = output_buffer
-                            .pSample
+                        let out_sample = std::mem::ManuallyDrop::take(&mut output_buffer.pSample)
                             .ok_or_else(|| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, "ProcessOutput succeeded without a sample"))?;
                         let is_keyframe = out_sample.GetSampleFlags().unwrap_or(0) & 0x1 != 0;
                         let data = read_contiguous_buffer(&out_sample)?;
