@@ -26,6 +26,36 @@ pub const REFUSALS_BEFORE_ANOTHER_SENDER: u32 = 3;
 /// actual timer lives in whatever drives this state machine at runtime.
 pub const RETRY_INTERVAL_SECS: f64 = 1.0;
 
+/// How often `windows-core` sends a `ping` control message while connected,
+/// per `PROTOCOL.md` §6.2/Appendix A and spec WSEND-05 ("every 2 seconds").
+pub const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Decides whether a `ping` should be sent right now, given the session's
+/// current state and when the last one went out (spec WSEND-05: "send a
+/// `ping` control message every 2 seconds while connected").
+///
+/// Gated on [`SessionState::Connected`] only — never while retrying,
+/// paused, or terminal. `last_ping_at` of `None` means no ping has gone out
+/// yet this session, which always fires immediately. `now` is passed in
+/// rather than read via `Instant::now()` inside this function, the same
+/// seam this module's other pure logic uses (real timer/OS-clock calls stay
+/// in whatever runtime loop drives this state machine, per the module-level
+/// doc comment); that keeps this decision itself plain, injectable-clock
+/// testable Rust.
+pub fn should_send_ping(
+    state: SessionState,
+    last_ping_at: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> bool {
+    if state != SessionState::Connected {
+        return false;
+    }
+    match last_ping_at {
+        None => true,
+        Some(last) => now.duration_since(last) >= PING_INTERVAL,
+    }
+}
+
 /// Why a session reached `Terminal` — no further auto-retry follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalReason {
@@ -181,5 +211,44 @@ mod tests {
         let terminal = SessionState::Terminal { reason: TerminalReason::AnotherSenderConnected };
         let next = transition(terminal, SessionEvent::DialSucceeded);
         assert_eq!(next, terminal);
+    }
+
+    // --- should_send_ping: spec WSEND-05 ("every 2 seconds while connected"). ---
+
+    #[test]
+    fn ping_fires_immediately_on_first_connect_with_no_prior_ping() {
+        let now = std::time::Instant::now();
+        assert!(should_send_ping(SessionState::Connected, None, now));
+    }
+
+    #[test]
+    fn ping_does_not_fire_before_the_interval_elapses() {
+        let last = std::time::Instant::now();
+        let now = last + std::time::Duration::from_millis(500);
+        assert!(!should_send_ping(SessionState::Connected, Some(last), now));
+    }
+
+    #[test]
+    fn ping_fires_once_the_full_interval_has_elapsed() {
+        let last = std::time::Instant::now();
+        let now = last + PING_INTERVAL;
+        assert!(should_send_ping(SessionState::Connected, Some(last), now));
+    }
+
+    #[test]
+    fn ping_never_fires_outside_the_connected_state() {
+        let last = std::time::Instant::now();
+        let now = last + PING_INTERVAL;
+        assert!(!should_send_ping(
+            SessionState::Retrying { consecutive_refusals: 0 },
+            Some(last),
+            now
+        ));
+        assert!(!should_send_ping(SessionState::Paused, Some(last), now));
+        assert!(!should_send_ping(
+            SessionState::Terminal { reason: TerminalReason::Closing },
+            Some(last),
+            now
+        ));
     }
 }

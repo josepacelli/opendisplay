@@ -195,7 +195,7 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | WSEND-02 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-03 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-04 | P1: WiFi extension | Tasks | Implementing |
-| WSEND-05 | P1: WiFi extension | Tasks | In Tasks |
+| WSEND-05 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-06 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-07 | P1: WiFi extension | Tasks | Implementing |
 | WSEND-08 | P1: USB extension | Tasks | Implementing |
@@ -212,7 +212,7 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 | WSEND-19 | P1: Touch/cursor | Tasks | Implementing |
 | WSEND-20 | P1: Touch/cursor | Tasks | Implementing |
 | WSEND-21 | P1: Touch/cursor | Tasks | Implementing |
-| WSEND-22 | P1: Touch/cursor | Tasks | In Tasks |
+| WSEND-22 | P1: Touch/cursor | Tasks | Implementing |
 | WSEND-23 | P2: Multi-device | - | Pending |
 | WSEND-24 | P2: Multi-device | - | Pending |
 | WSEND-25 | P2: Tray UI | - | Pending |

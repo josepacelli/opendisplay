@@ -37,6 +37,26 @@ struct WelcomeWire {
 }
 
 #[derive(Debug, Serialize)]
+struct PingWire {
+    #[serde(rename = "type")]
+    msg_type: &'static str,
+}
+
+/// Builds the outbound `ping` payload windows-core sends every 2 seconds
+/// while connected (spec WSEND-05, `PROTOCOL.md` §6.2/Appendix A). No
+/// optional telemetry fields (`drops`/`encDrops`/`netDrops`/...) are
+/// populated — `PROTOCOL.md`'s ping table marks all of them optional, and
+/// this sender does not yet track those stats. Whether/when to call this is
+/// `session_state::should_send_ping`'s decision; this function only builds
+/// the wire bytes.
+pub fn build_ping_message() -> Vec<u8> {
+    serde_json::to_vec(&PingWire {
+        msg_type: protocol::wire_message::PING,
+    })
+    .expect("PingWire always serializes")
+}
+
+#[derive(Debug, Serialize)]
 struct UpdateRequiredWire {
     #[serde(rename = "type")]
     msg_type: &'static str,
@@ -304,5 +324,14 @@ mod tests {
         assert_eq!(frames[0]["type"], "welcome");
         assert_eq!(frames[1]["type"], "updateRequired");
         assert_eq!(frames[1]["target"], "ios");
+    }
+
+    // --- build_ping_message: spec WSEND-05. ---
+
+    #[test]
+    fn build_ping_message_produces_the_ping_wire_type() {
+        let bytes = build_ping_message();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["type"], "ping");
     }
 }

@@ -34,6 +34,12 @@ pub mod wire_message {
     pub const SLEEPING: &str = "sleeping";
     /// phone -> Mac: app quit, end the session for good.
     pub const CLOSING: &str = "closing";
+    /// Sender -> receiver liveness beat, sent every 2 seconds while
+    /// connected, per `PROTOCOL.md` §6.2/Appendix A and spec WSEND-05. Not
+    /// named in `Shared/Protocol.swift`'s `WireMessage` enum (its doc
+    /// comment: "existing types (hello, ping, pong, touch, ...) stay inline
+    /// for now") — sourced directly from `PROTOCOL.md` instead.
+    pub const PING: &str = "ping";
 }
 
 /// Frame length header size in bytes (PROTOCOL.md §3).
@@ -167,6 +173,11 @@ mod tests {
         assert_eq!(wire_message::UPDATE_REQUIRED, "updateRequired");
         assert_eq!(wire_message::SLEEPING, "sleeping");
         assert_eq!(wire_message::CLOSING, "closing");
+    }
+
+    #[test]
+    fn ping_wire_string_matches_protocol_md() {
+        assert_eq!(wire_message::PING, "ping");
     }
 
     // --- Framing: PROTOCOL.md §3. ---

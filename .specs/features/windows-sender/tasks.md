@@ -1008,6 +1008,132 @@ T35 → T36
 
 ---
 
+## Verifier Fix Round 1
+
+Fix items found by the independent Verifier (`.specs/features/windows-sender/validation.md`), not planned upfront in the original Task Breakdown above. Numbered FIX1-FIX6 rather than continuing the T-series, since these are bug fixes against gaps a fresh reviewer found, not new tasks derived from the spec during Tasks phase.
+
+### FIX1: Wire windows-core's main() into an actual runtime
+
+**What**: Compose transport discovery (WiFi+USB), dial, handshake, session_state, display, capture, encode, frame_sender, input, cursor, log, and ipc_server together in `windows-core`'s `main()`, so a `Connect` IPC command from the tray actually drives a live session end to end.
+**Where**: `Windows/core/src/main.rs`, `Windows/core/src/runtime.rs` (new), `Windows/core/src/ipc_server.rs` (added `PIPE_NAME` constant)
+**Depends on**: T9-T23 (every module composed here already exists)
+**Requirement**: Verifier gap 1 (Blocker) — no story is reachable without this
+
+**Done when**:
+- [ ] `windows-core`'s `main()` starts the log writer, WiFi+USB discovery, and `ipc::serve` on a `Ready` bootstrap
+- [ ] A `Connect` IPC command runs dial -> handshake -> display create -> capture -> encode -> frame_sender, plus input injection and cursor forwarding, with the session_state retry loop driving reconnects
+- [ ] `Disconnect`/terminal state tears the session down cleanly
+- [ ] Every OS-bound piece (display/capture/encode/input/cursor/pipe) is wired via the real functions, not stubbed
+
+**Tests**: unit (pure glue only: `base64_encode`, `encode_cursor_event`); the orchestration itself is OS-bound, same category as `capture.rs`/`encode.rs`
+**Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
+### FIX2: Send `ping` every 2 seconds while connected (WSEND-05)
+
+**What**: A 2-second interval timer that sends `ping` while the session is `Connected`, stops otherwise.
+**Where**: `Windows/core/src/session_state.rs` (`should_send_ping`, `PING_INTERVAL`), `Windows/core/src/protocol_session.rs` (`build_ping_message`), `Windows/protocol/src/lib.rs` (`wire_message::PING`)
+**Depends on**: T14 (session_state), T15 (protocol_session)
+**Requirement**: WSEND-05; Verifier gap 2 (Major)
+
+**Done when**:
+- [x] `should_send_ping` fires only while `Connected`, gated on a 2-second interval since the last ping
+- [x] `build_ping_message` produces a `{"type":"ping"}` wire payload
+- [x] Gate check passes: `cargo test -p core` / `cargo test -p protocol` — NOT RUN, see Gate line below
+- [x] Test count: 5 tests written (4 in `session_state.rs`, 1 in `protocol_session.rs`, plus 1 in `protocol` crate for the wire constant)
+
+**Tests**: unit
+**Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
+### FIX3: Gracefully ignore `pencil`/`proximity` messages (WSEND-22)
+
+**What**: A control-message dispatcher (`parse_control_message`/`apply_control_message`) that no-ops on `pencil`/`proximity` (and any other message type this sender doesn't act on) without erroring, while still dispatching `touch`/`scroll`/`sleeping`/`closing` to the modules that already handle them.
+**Where**: `Windows/core/src/protocol_session.rs`, `Windows/protocol/src/lib.rs` (`wire_message::PENCIL`/`PROXIMITY`)
+**Depends on**: T15 (protocol_session), T20 (input)
+**Requirement**: WSEND-22; Verifier gap 2 (Major)
+
+**Done when**:
+- [ ] A `pencil` or `proximity` message parses to `ControlMessage::Ignored` and produces no error
+- [ ] Applying an ignored message leaves touch state and the input injector untouched
+- [ ] `touch`/`scroll`/`sleeping`/`closing` still dispatch correctly through the same function
+- [ ] Gate check passes: `cargo test -p core` / `cargo test -p protocol` — NOT RUN, see Gate line below
+- [ ] Test count: 9 tests written in `protocol_session.rs`, 1 in `protocol` crate
+
+**Tests**: unit
+**Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
+### FIX4: End the current session before dialing a second device (Edge Case)
+
+**What**: An incoming `Connect` while already connected to a *different* device now ends the current session (`Effect::TeardownSession`) before dialing the new one, instead of silently running two dials.
+**Where**: `Windows/core/src/ipc_server.rs`
+**Depends on**: T23 (ipc_server)
+**Requirement**: spec.md Edge Case ("second device while one connected"); Verifier gap 3 (Major)
+
+**Done when**:
+- [ ] `Connect` to a different device while one is active yields `[TeardownSession, DialDevice]`, in that order
+- [ ] `Connect` to the *same* already-current device yields `[DialDevice]` only (no spurious teardown)
+- [ ] Gate check passes: `cargo test -p core` — NOT RUN, see Gate line below
+- [ ] Test count: 2 tests added
+
+**Tests**: unit
+**Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
+### FIX5: Add unit tests to already-testable modules
+
+**What**: Add `#[cfg(test)]` coverage for the pure, injectable-seam logic already separated from the OS call in five files the Verifier flagged as having zero tests despite a testable seam.
+**Where**: `Windows/core/src/cursor.rs`, `Windows/tray/src/ui/status.rs`, `Windows/tray/src/ui/first_run.rs`, `Windows/installer/src/driver_install.rs`, `Windows/installer/src/uninstall.rs`
+**Depends on**: T21, T26, T28, T29, T32
+**Requirement**: Verifier gap 4 (Minor)
+
+**Done when**:
+- [ ] `cursor::diff_snapshots` has tests covering no-previous-snapshot, position/visibility change, no change, and icon change (with and without a successful PNG encode)
+- [ ] `status::{status_for_connect_failure,status_for_message}` have tests for each of the four `TrayStatus` states
+- [ ] `first_run::FirstRunFlow::{apply,decline}` have tests for offer/decline/re-offer and "unrelated message leaves state untouched"
+- [ ] `driver_install::install_driver` has tests for each `DriverInstallError` branch plus each variant's `Display` text
+- [ ] `uninstall::uninstall` has tests for each `UninstallError` branch plus each variant's `Display` text
+- [ ] Gate check passes: `cargo test --workspace` — NOT RUN, see Gate line below
+
+**Tests**: unit
+**Gate**: quick
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
+### FIX6: Wire windows-tray's and windows-installer's main()
+
+**What**: Compose `windows-tray`'s `main()` (connect to the IPC pipe, run the picker/status/first-run loop, offer the installer on `CoreNotRunning`) and `windows-installer`'s `main()` (dispatch `install`/`uninstall` from argv, calling `driver_install`/`scheduled_task`/`autostart`/`uninstall` in sequence).
+**Where**: `Windows/tray/src/main.rs`, `Windows/installer/src/main.rs`
+**Depends on**: T24-T31 (every module composed here already exists)
+**Requirement**: Verifier gap 1 (Blocker), tray/installer half
+
+**Done when**:
+- [ ] `windows-tray`'s `main()` connects via `ipc_client`, renders the device picker/status/first-run states from the `CoreToTray` stream, and dispatches `TrayToCore` on user actions
+- [ ] `windows-tray` offers to launch the installer on `CoreNotRunning`/driver-missing
+- [ ] `windows-installer`'s `main()` dispatches on an `install`/`uninstall` argv flag, calling the existing composed functions in sequence
+
+**Tests**: none (OS-bound composition, same category as FIX1)
+**Gate**: build
+
+**Gate: NOT RUN — no Rust/WDK toolchain on this macOS host (environment limitation, confirmed with user before Execute started).**
+
+---
+
 ## Phase Execution Map
 
 ```
