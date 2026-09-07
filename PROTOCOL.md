@@ -57,7 +57,9 @@ sender reaches it identically over WiFi (dial the discovered address) and
 over USB (dial a tunneled port), and one code path serves both transports.
 
 * The protocol runs over a **single TCP connection**. Video, control
-  messages, and telemetry all share it, in both directions.
+  messages, and telemetry all share it, in both directions. The one
+  optional exception is the UDP cursor side channel (section 6.3), which
+  carries nothing a receiver cannot also get over TCP.
 * There is no TLS and no authentication at `pv` 3. The protocol is designed
   for trusted local networks and direct cables. Implementations SHOULD
   disable Nagle's algorithm (TCP_NODELAY); input events are tiny packets and
@@ -272,6 +274,18 @@ nothing before it arrives.
   transports and renames.
 * `pv` (int, optional): the receiver's protocol version. **Absent means
   1** (every pre-handshake install).
+* `cursorPort` (int, optional): a UDP port on the receiver that accepts
+  cursor datagrams (section 6.3). Present only while that listener is
+  actually bound. Absent means the receiver takes cursor positions over
+  TCP only. Additive at `pv` 3, no bump.
+* `addrs` (array of strings, optional): every IP address the receiver is
+  reachable on (section 6.4). Link-local IPv6 entries carry no zone id.
+  The receiver SHOULD re-send `hello` when this set changes (a cable
+  plugged mid-session creates the interface the sender must probe).
+  Additive at `pv` 3, no bump.
+* `maxEncodeWide` / `maxEncodeHigh` (int, optional): the receiver's decode
+  ceiling in pixels (section 6.5) — the largest stream it can sustain,
+  independent of the panel size it announced. Additive at `pv` 3, no bump.
 
 A receiver MUST re-send `hello` on the live connection whenever its
 announced dimensions change (rotation). The sender rebuilds the display in
@@ -366,6 +380,91 @@ receiver can scale it without knowing the sender's HiDPI factor; `ax`, `ay`
 are the hotspot **normalized within the sprite** (0..1 of its own size).
 Sent when the sprite changes and re-sent after reconnects.
 
+### 6.3 Cursor side channel (UDP)
+
+Cursor positions share the TCP connection with video frames of several
+hundred KB. Over WiFi one late frame holds every cursor update queued
+behind it (head-of-line blocking), and the cursor stutters while the video
+is fine. The side channel moves the position messages, and only those, onto
+UDP where a lost or late datagram costs nothing: the next one supersedes it.
+
+* **Capability-gated and optional.** A receiver that offers it binds a UDP
+  listener (the official receiver uses TCP port + 1, so 9001 by default)
+  and advertises the port as `hello.cursorPort`. A sender that sees no
+  `cursorPort`, or cannot reach it, MUST keep sending `cursor` over TCP.
+  Either side may lack the feature with no loss beyond cursor smoothness.
+* **Bindings.** WiFi/LAN only. usbmuxd (section 2.2) tunnels TCP streams
+  and cannot carry UDP; a sender on the USB binding MUST ignore
+  `cursorPort`. The sender dials the same host the TCP connection reached.
+* **Datagram format.** One datagram is one `cursor` message (section 6.2)
+  as UTF-8 JSON, without the 4-byte length prefix, plus `s` (unsigned
+  integer): a sequence number that starts at 1 and increments by one per
+  datagram sent, e.g. `{"type":"cursor","x":0.4210,"y":0.7735,"v":1,"s":88}`.
+  Nothing but `cursor` messages travel here; `cursorImg` stays on TCP
+  because a sprite must arrive intact.
+* **Sequence semantics.** The receiver keeps the highest `s` seen and MUST
+  drop any `cursor` message — datagram or TCP frame — whose `s` is not
+  greater than it (UDP reorders, and around a path switch a TCP frame
+  queued behind video can arrive after a newer datagram). The sequence is
+  per TCP session: it restarts when the TCP connection is (re-)established
+  and runs across both paths. The receiver resets its tracker on every new
+  TCP connection and on every new UDP flow, and accepts datagrams only
+  from the most recently seen flow. A TCP `cursor` frame without `s` (an
+  older sender) applies unconditionally.
+* **Delivery confirmation.** `.ready` on a UDP socket proves only a local
+  route — a firewalled port would swallow the cursor silently. On the
+  first accepted datagram of a flow the receiver sends `cursorAck` (a
+  control message with no other fields) over TCP. Until it arrives the
+  sender MUST keep mirroring every position onto TCP (same `s`, so the
+  receiver deduplicates); if no ack arrives within a few seconds the
+  sender SHOULD drop the UDP flow and stay on TCP. A receiver that stops
+  listening mid-session SHOULD re-send `hello` without `cursorPort` to
+  withdraw the offer.
+* **Mixing.** A sender MAY switch between UDP and TCP for `cursor` at any
+  time. Both deliver into the same cursor state on the receiver.
+* **Firewall note.** A receiver offering the channel now also listens on
+  UDP (port + 1 for the official receiver). The official Mac receiver
+  therefore needs UDP 9001 open in addition to TCP 9000.
+
+### 6.4 Cable upgrade (`hello.addrs`)
+
+A Mac-to-Mac cable — Thunderbolt/USB4 (Thunderbolt Bridge) or plain USB-C
+on recent macOS (host-to-host networking, gated by the "allow accessory"
+consent on each Mac) — appears as a network interface on both ends. It is
+always the better path than WiFi, but nothing guarantees a Bonjour dial
+lands on it: mDNS resolution under an interface-restricted dial can stall,
+and an unrestricted dial races all resolved addresses and often keeps
+WiFi.
+
+`hello.addrs` closes the gap. A receiver that can carry a session over a
+host-to-host cable (today: a Mac — a cabled phone reaches the sender over
+usbmuxd instead, and a phone's advertised WiFi address would only invite
+a false "upgrade" onto a path that still crosses its radio) lists the
+addresses it is reachable on; a sender whose live TCP session runs over WiFi SHOULD
+periodically probe those addresses (link-local IPv6 re-scoped to each of
+its own plausible interfaces) with WiFi forbidden, and on the first probe
+that connects over a non-WiFi path, move the session onto it: the probe
+connection simply becomes the session connection, and the receiver's
+newcomer handling (a newcomer proves itself with bytes before it may
+replace a live session) swaps it in cleanly. The abandoned WiFi socket is closed
+by the sender. A sender already on a wired path, or on the USB (usbmuxd)
+binding, does not probe.
+
+The upgrade is one-way by design. When the sender judges that a session
+rides the direct host-to-host cable — a wired path, to a link-local peer
+address (fe80::/10 or 169.254/16), on a receiver class that can be cabled
+(today: a Mac; all three conditions, since link-local peers also occur on
+bridged or DHCP-less LANs where no cable joins the two machines) — it
+SHOULD treat the death of that connection as intent and end the session
+rather than redial over WiFi: pulling the cable is how a person
+deliberately ends a session, and a WiFi fallback would resurrect what
+they just closed. Every other session death keeps the reconnect loop: a
+radio drop is never intent, and a routed wired path (a docked sender
+streaming to a receiver on WiFi) going quiet says nothing about a cable.
+Once a sender decides to redial, the dial's own failures follow the
+normal reconnect rules — only the death of the live cable connection
+itself is intent.
+
 **`welcome`**: the sender's `pv` and `min` (the oldest receiver `pv` it
 still supports). Sent in response to every `hello`. A receiver whose own
 `pv` policy is not met by the sender (`welcome.pv < ` its minimum) is the
@@ -383,6 +482,27 @@ block its own UI. At `pv` 3 this is only sent when
 `hello.pv < welcome.min`, which never happens while `min` is 1; the
 machinery exists so a future floor raise degrades into a clear message
 instead of a silent failure.
+
+### 6.5 Decode ceiling (`hello.maxEncodeWide` / `maxEncodeHigh`)
+
+`hello.pixelsWide/High` sets the desktop size, and without further
+information it also sets the stream size — but a big panel says nothing
+about the decoder behind it. Measured end to end, H.264 hardware decode
+stops below 5120 pixels wide on every Mac tested, current models
+included: a 5K panel asking for a 5K H.264 stream gets a session the
+receiver cannot sustain, which degrades confusingly instead of failing
+cleanly.
+
+Both fields are optional and additive (no `pv` bump). A receiver MAY
+advertise the largest stream, in pixels, it can actually decode at
+frame rate; a sender that understands the fields SHOULD keep the
+desktop at the announced panel size and, when the stream it would
+encode exceeds the ceiling, scale the stream down to fit inside it,
+preserving aspect. A ceiling the stream already fits inside changes
+nothing, and a receiver that omits the fields gets the previous
+behavior (stream size follows the announced pixels and the sender's
+quality setting). Derive advertised ceilings from measured playback: a
+decode session that merely creates successfully proves nothing.
 
 ## 7. Coordinate spaces and units
 
@@ -520,6 +640,7 @@ Mechanics at a glance (the policy behind them lives in COMPATIBILITY.md):
 | 1 | Baseline: framing, demux heuristic, video format, `hello`, `ping`/`pong`, `touch`, `scroll`, `kf`, `stats`, `cursor`, `cursorImg`, Bonjour TXT `id` |
 | 2 | Version handshake: `pv` in `hello` and TXT, `welcome`, `updateRequired`, `sleeping`, `closing` |
 | 3 | `pencil`, `proximity`; below pv 3 the receiver degrades stylus to `touch` |
+| 3 (additive) | `hello.cursorPort` and the UDP cursor side channel (6.3); optional, no bump |
 | 4 (reserved) | Typed frame header replacing the section 4 demux heuristic (two-phase migration) |
 
 ---
@@ -574,3 +695,4 @@ This file is versioned by git; the authoritative change log is
 | Date | Change |
 |---|---|
 | 2026-08-19 | Initial specification, written against `pv` 3 |
+| 2026-08-26 | Additive: `hello.cursorPort` and the UDP cursor side channel (section 6.3) |

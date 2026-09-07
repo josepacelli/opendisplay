@@ -6,7 +6,7 @@
 
 **Turn your spare Apple devices into second monitors for your Mac — free, open source, no subscription.**
 
-iPhone and iPad today, spare MacBooks on the roadmap. A self-hosted
+iPhone, iPad, and spare Macs. A self-hosted
 alternative to Apple Sidecar, Duet Display, and Luna Display: true extended
 display (not just mirroring), Retina-sharp, over USB or WiFi, with touch and
 scroll input.
@@ -16,7 +16,10 @@ scroll input.
 <br />
 
 <a href="https://ko-fi.com/peetzweg">
-  <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Buy Me a Coffee on ko-fi.com" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/support_me_on_kofi_beige.png" />
+    <img src="assets/support_me_on_kofi_dark.png" width="256px" alt="Support me on Ko-fi" />
+  </picture>
 </a>
 
 </div>
@@ -59,6 +62,9 @@ pipeline, USB transport, input injection) are already working.
 - ⚡ **Low-latency pipeline** — hardware H.264 encode (VideoToolbox,
   real-time mode, no B-frames), TCP_NODELAY, frame-drop backpressure with
   keyframe recovery, decode-and-render via `AVSampleBufferDisplayLayer`.
+- 💻 **A spare Mac as a display** — install the small *OpenDisplay
+  Receiver* app (macOS 12+) on an old Mac and any other Mac extends onto it
+  over WiFi or a Thunderbolt/Ethernet cable, at native Retina resolution.
 - 🔒 **Self-hosted & private** — your screen never touches anyone's server.
   Two small apps, one TCP connection, that's it.
 
@@ -104,6 +110,23 @@ adapters.
 **Does it support iPad?** The receiver app is universal (iPhone + iPad);
 iPad is the same codebase. iPad-specific polish (Pencil, pressure) is on the
 roadmap.
+
+**Can another Mac be the display?** Yes. Install **OpenDisplay Receiver**
+(a separate, small app from the same release) on the spare Mac. It only needs
+**macOS 12 Monterey** or newer, so Macs from around 2015 onward qualify even
+though the sending Mac needs macOS 14. The receiver shows up on the sending Mac
+like a phone does and becomes a real extended Retina display. Over WiFi it works out of the box. For a cable, connect the two
+Macs with a **Thunderbolt or USB4 cable** (macOS creates a *Thunderbolt Bridge*
+network between them), with an **Ethernet** cable or adapters, or — on recent
+macOS on both Macs — a plain **USB-C data cable** (macOS runs a small network
+link over it; approve the *allow accessory to connect* prompt on each Mac,
+which appears depending on which Mac is plugged into which). The sender moves
+the session onto the cable automatically, even one plugged in mid-session, and
+the device row says *Cable*. Older Macs with a Mini DisplayPort-shaped
+Thunderbolt 1 or 2 port work with a Thunderbolt 3 to 2 adapter and a
+Thunderbolt 2 cable.
+Input from the receiving Mac's keyboard and mouse is a follow-up
+([#147](https://github.com/peetzweg/opendisplay/issues/147)).
 
 **Why H.264 and not HEVC/AV1?** Hardware H.264 encode/decode is universally
 fast and the latency is excellent. HEVC is a planned option for better
@@ -185,7 +208,8 @@ on the App Store and lives on GitHub instead.
 ## Install
 
 You need **two apps**: a Mac app (captures and sends) and an iOS app
-(receives and displays).
+(receives and displays). To use a **second Mac** as the display, install
+`OpenDisplay Receiver` on it instead of the iOS app.
 
 ### Prebuilt downloads (Mac)
 
@@ -194,6 +218,10 @@ Grab `OpenDisplay.dmg` from the
 The app is signed with a Developer ID certificate and notarized by Apple, so it
 opens with a plain double-click on macOS 14+ — no Gatekeeper warning. Open the
 `.dmg` and drag the app to Applications.
+
+For a Mac that should *be* the display, grab `OpenDisplayReceiver.dmg` from
+the same release instead. It runs on macOS 12+ and is signed and notarized
+the same way; both apps update themselves via Sparkle.
 
 ### iPhone app
 
@@ -304,7 +332,6 @@ Tracked as [roadmap issues](https://github.com/peetzweg/opendisplay/issues?q=is%
 - [#9](https://github.com/peetzweg/opendisplay/issues/9) Resolution & quality settings
 - [#10](https://github.com/peetzweg/opendisplay/issues/10) HEVC encoding
 - [#12](https://github.com/peetzweg/opendisplay/issues/12) Audio forwarding
-- [#17](https://github.com/peetzweg/opendisplay/issues/17) macOS receiver — use another Mac as a display
 
 **Experience**
 - [#11](https://github.com/peetzweg/opendisplay/issues/11) Menu bar app mode with auto-connect
@@ -314,7 +341,7 @@ Tracked as [roadmap issues](https://github.com/peetzweg/opendisplay/issues?q=is%
 - [#14](https://github.com/peetzweg/opendisplay/issues/14) Remote access beyond the local network
 - [#15](https://github.com/peetzweg/opendisplay/issues/15) Additional client platforms
 
-Done: prebuilt releases, built-in USB connectivity (no helper tools), WiFi via Bonjour, portrait mode, touch + two-finger scroll, performance overlay, iPad support, multiple devices at once ([#8](https://github.com/peetzweg/opendisplay/issues/8) — every connected device becomes its own extended display).
+Done: prebuilt releases, built-in USB connectivity (no helper tools), WiFi via Bonjour, portrait mode, touch + two-finger scroll, performance overlay, iPad support, multiple devices at once ([#8](https://github.com/peetzweg/opendisplay/issues/8) — every connected device becomes its own extended display), a Mac as the display ([#17](https://github.com/peetzweg/opendisplay/issues/17), WiFi or Thunderbolt/Ethernet cable).
 
 ## Auto-update (macOS app)
 

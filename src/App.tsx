@@ -5,31 +5,28 @@ import SupportNudge from "./components/SupportNudge"
 import TextRotate from "./components/TextRotate"
 
 const HERO_WORDS = [
+  "partner's iPad",
+  "5K iMac",
+  "spare MacBook",
   "iPhone",
   "girlfriend's iPad",
   "mother's iPad",
-  "partner's iPad",
   "kid's iPad",
   "dusty iPad",
   "iPad",
 ]
 
+function AppStoreButton() {
+  return (
+    <a className="app-store-button" href="https://apps.apple.com/app/id6780264891" aria-label="Download on the App Store">
+      <img src="app-store-badge.svg" alt="" width="120" height="40" />
+    </a>
+  )
+}
+
 export default function App() {
   const [macVer, setMacVer] = useState<string | null>(null)
   const [starCount, setStarCount] = useState<string | null>(null)
-  // Step 1 should be whichever platform you're reading this on. Default is
-  // Mac-first (what SSR/prerender emits, and what desktop/Windows/Linux see);
-  // on an iPhone/iPad we flip so the receiver you install here comes first.
-  const [iosFirst, setIosFirst] = useState(false)
-
-  useEffect(() => {
-    const ua = navigator.userAgent
-    const isIosDevice =
-      /iPhone|iPad|iPod/.test(ua) ||
-      // iPadOS 13+ reports as "Macintosh"; a touch-capable one is an iPad.
-      (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
-    if (isIosDevice) setIosFirst(true)
-  }, [])
   // Show the brand icon in the navbar only once the big hero logo has
   // scrolled up behind the sticky nav — it "hands off" from hero to navbar.
   const heroLogoRef = useRef<HTMLImageElement>(null)
@@ -191,7 +188,7 @@ export default function App() {
             A true extended display, not a mirror: USB or WiFi, Retina-sharp, with touch and
             scroll. No subscription. No dongle. No account.
           </p>
-          <p className="meta">macOS 14+ &nbsp;·&nbsp; iPadOS 16+ &nbsp;·&nbsp; iOS 16+ &nbsp;·&nbsp; GPL-3.0</p>
+          <p className="meta">macOS 14+ &nbsp;·&nbsp; iPadOS 16+ &nbsp;·&nbsp; iOS 16+ &nbsp;·&nbsp; Receiver Mac 12+ &nbsp;·&nbsp; GPL-3.0</p>
         </div>
       </section>
 
@@ -202,74 +199,58 @@ export default function App() {
       <section className="downloads-sec">
         <div className="wrap">
           <p className="needs-both">
-            OpenDisplay is <strong>two apps that work together</strong> — install both to get going.
+            OpenDisplay is <strong>two apps that work together</strong> — the <strong>Sender</strong> on your Mac and a <strong>Receiver</strong> on the device you want to use as a display. Install both to get going.
           </p>
-          <div className="downloads">
-            {/* Step 1 is whichever platform you're reading this on — on an
-                iPhone/iPad the receiver comes first (see iosFirst). */}
-            {(() => {
-              const macStep = (
-                <div key="mac">
-                  <div className="dl-head">
-                    <span className="step">Step {iosFirst ? 2 : 1}</span> On your Mac{" "}
-                    <span className="ver">{macVer}</span>
-                  </div>
-                  <p className="dl-sub">The sender — captures a virtual display and streams it.</p>
-                  <a
-                    className="btn primary"
-                    href="https://github.com/peetzweg/opendisplay/releases/latest/download/OpenDisplay.dmg"
-                  >
-                    Download for Mac
-                  </a>
-                  <p className="note">
-                    Signed &amp; notarized — opens normally on macOS&nbsp;14+. Prefer to compile it yourself?{" "}
-                    <a href="https://github.com/peetzweg/opendisplay#quick-start">Build from source ↗</a>
-                  </p>
-                  <p className="note">
-                    Looking for an older version?{" "}
-                    <a href="https://github.com/peetzweg/opendisplay/releases">Browse all releases ↗</a>
-                  </p>
+          <div className="download-group sender-group">
+            <h2 className="download-role">Sender</h2>
+            <p className="download-group-intro">Install this on the Mac whose desktop you want to extend or mirror.</p>
+            <div className="download-options sender-download">
+              <div className="download-option">
+                <div className="platform">macOS <span className="ver">{macVer}</span></div>
+                <p className="dl-sub">Captures a virtual display and streams it.</p>
+                <a className="btn primary" href="https://github.com/peetzweg/opendisplay/releases/latest/download/OpenDisplay.dmg">
+                  Download
+                </a>
+                <p className="note">
+                  Signed &amp; notarized — opens normally on macOS&nbsp;14+. Prefer to compile it yourself?{" "}
+                  <a href="https://github.com/peetzweg/opendisplay#quick-start">Build from source ↗</a>
+                </p>
+                <p className="note">
+                  Looking for an older version?{" "}
+                  <a href="https://github.com/peetzweg/opendisplay/releases">Browse all releases ↗</a>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="download-group receiver-group">
+            <h2 className="download-role">Receiver</h2>
+            <p className="download-group-intro">Install one on the device you want to use as your extra display.</p>
+            <div className="download-options receiver-downloads">
+              <div className="download-option">
+                <div className="platform">
+                  <span className="platform-name">iOS</span><span className="platform-separator">&amp;</span><span className="platform-name">iPadOS</span>
                 </div>
-              )
-              const iosStep = (
-                <div key="ios">
-                  <div className="dl-head">
-                    <span className="step">Step {iosFirst ? 1 : 2}</span> On your iPhone &amp; iPad
-                  </div>
-                  <p className="dl-sub">The receiver — displays the stream and sends touch back.</p>
-                  {/* TODO: On desktop only, show a QR code next to the App Store
-                      badge that encodes the App Store link, so visitors on a
-                      desktop PC can scan it with their iPhone or iPad to install
-                      the receiver. Hide it on touch/mobile viewports. */}
-                  <div className="ios-row">
-                    <a
-                      className="badge-wrap"
-                      href="https://apps.apple.com/app/id6780264891"
-                    >
-                      <img
-                        className="appstore-badge"
-                        src="app-store-badge.svg"
-                        alt="Download on the App Store"
-                        width="120"
-                        height="40"
-                      />
-                    </a>
-                  </div>
-                  <p className="sub">
-                    Want early builds? <a id="testflight" href="https://testflight.apple.com/join/3NYaY11c">
-                      Join the TestFlight beta
-                    </a>
-                    ,<br />
-                    or{" "}
-                    <a href="https://github.com/peetzweg/opendisplay#quick-start">
-                      compile it from source ↗
-                    </a>
-                    .
-                  </p>
-                </div>
-              )
-              return iosFirst ? [iosStep, macStep] : [macStep, iosStep]
-            })()}
+                <p className="dl-sub">The receiver app for your iPhone and iPad.</p>
+                <AppStoreButton />
+                <p className="sub">
+                  Want early builds? <a id="testflight" href="https://testflight.apple.com/join/3NYaY11c">Join the TestFlight beta</a>, or <a href="https://github.com/peetzweg/opendisplay#quick-start">compile from source ↗</a>.
+                </p>
+              </div>
+              <div className="download-option">
+                <div className="platform">macOS</div>
+                <p className="dl-sub">Turns an older Mac into a second display.</p>
+                <a className="btn primary" href="https://github.com/peetzweg/opendisplay/releases/latest/download/OpenDisplayReceiver.dmg">
+                  Download
+                </a>
+                <p className="note">
+                  Got a spare <em>Mac</em> to use as the display? Install OpenDisplay Receiver on it instead of the iOS app — runs on macOS&nbsp;12+, so older Macs qualify.
+                </p>
+                <p className="note">
+                  <a href="https://github.com/peetzweg/opendisplay/releases">Browse all releases ↗</a>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -335,6 +316,7 @@ export default function App() {
             <div className="fcell"><span className="n">007</span><h3>Touch &amp; scroll</h3><p>Tap to click, drag to drag, two-finger pan to scroll. A tiny touchscreen for your Mac.</p></div>
             <div className="fcell"><span className="n">008</span><h3>Portrait mode</h3><p>Rotate the phone and the virtual display rebuilds as a vertical monitor — perfect for chat, logs, or docs.</p></div>
             <div className="fcell"><span className="n">009</span><h3>Private by design</h3><p>One direct TCP connection between your devices. No servers, no accounts, no telemetry. Read the code.</p></div>
+            <div className="fcell"><span className="n">010</span><h3>A spare Mac as a display</h3><p>Install the small <em>OpenDisplay Receiver</em> app (macOS 12+) on an old Mac and another Mac extends onto it — a real Retina extended display, over WiFi or a Thunderbolt or Ethernet cable. An old MacBook becomes a second monitor.</p></div>
           </div>
         </div>
       </section>
@@ -373,10 +355,11 @@ export default function App() {
               <tbody>
                 <tr><td>Price</td><td className="mark-yes os">Free &amp; open source</td><td>Free</td><td className="mark-no">Subscription</td><td className="mark-no">$$$ + dongle</td></tr>
                 <tr><td>iPhone as display</td><td className="mark-yes os">✓</td><td className="mark-no">✕</td><td className="mark-yes">✓</td><td className="mark-yes">✓</td></tr>
+                <tr><td>Mac as display</td><td className="mark-yes os">✓</td><td className="mark-no">✕</td><td className="mark-yes">✓</td><td className="mark-yes">✓</td></tr>
                 <tr><td>Different Apple IDs</td><td className="mark-yes os">✓</td><td className="mark-no">✕</td><td className="mark-yes">✓</td><td className="mark-yes">✓</td></tr>
                 <tr><td>No account / sign-up</td><td className="mark-yes os">✓</td><td>Apple&nbsp;ID</td><td className="mark-no">✕</td><td>—</td></tr>
                 <tr><td>Wired USB</td><td className="mark-yes os">✓</td><td className="mark-yes">✓</td><td className="mark-yes">✓</td><td className="mark-no">✕</td></tr>
-                <tr><td>Self-hosted / auditable</td><td className="mark-yes os">✓</td><td>—</td><td className="mark-no">✕</td><td className="mark-no">✕</td></tr>
+                <tr><td>Open source</td><td className="mark-yes os">✓</td><td>—</td><td className="mark-no">✕</td><td className="mark-no">✕</td></tr>
               </tbody>
             </table>
           </div>
@@ -426,6 +409,18 @@ export default function App() {
               <p>The receiver is a universal iOS app — it runs on iPad today. Run the Mac, an iPhone
               <em>and</em> an iPad at once for a second and a third screen. iPad-specific features
               (Apple Pencil, pressure) are on the roadmap.</p>
+            </details>
+            <details>
+              <summary>Can another Mac be the display?</summary>
+              <p>Yes. Install <em>OpenDisplay Receiver</em>, a separate small app from the same release, on
+              the spare Mac. It needs only macOS 12 Monterey or newer (the sending Mac needs 14), so Macs
+              from around 2015 onward qualify. It appears on the sending Mac like a phone would and
+              becomes a real extended Retina display. WiFi works out of the box. For a cable, use a
+              <em>Thunderbolt or USB4</em> cable (macOS sets up a Thunderbolt Bridge network between
+              the two), Ethernet, or — on recent macOS on both Macs — a plain USB-C data cable (approve
+              the "allow accessory" prompt on each Mac). The sender moves the session onto the cable
+              automatically, even one plugged in mid-session. Keyboard and mouse
+              input from the receiving Mac is a follow-up.</p>
             </details>
             <details>
               <summary>Is any of my screen data sent to a server?</summary>

@@ -146,7 +146,11 @@ final class DeviceSession: ObservableObject, Identifiable {
     // and its service row.
     var wifiServiceName: String?
 
-    var transportLabel: String { onUSB ? "USB" : "WiFi" }
+    // The live TCP path runs over a cable (Thunderbolt Bridge / Ethernet)
+    // rather than WiFi — reported by the sender once connected.
+    @Published var wired = false
+
+    var transportLabel: String { onUSB ? "USB" : wired ? "Cable" : "WiFi" }
 
     init(id: String, target: ConnectionTarget, name: String, sender: MacSender) {
         self.id = id
@@ -604,6 +608,9 @@ final class SenderController: ObservableObject {
             Log.info("display identity for \(session.id) moved to offset \(totalOffset) — "
                 + "macOS saved hostile state for the old one")
         }
+        sender.onTransportPath = { [weak session] wired in
+            session?.wired = wired
+        }
         sender.onPeerClosed = { [weak self, weak session] in
             // The receiver app quit — a deliberate goodbye, so no reconnect
             // waits around. Reopening the app is a fresh start handled by
@@ -822,7 +829,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("OpenDisplay")
                         .font(.title3.bold())
-                    Text("Your iPads and iPhones as extra displays")
+                    Text("Your iPads, iPhones and Macs as extra displays")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1010,37 +1017,8 @@ struct ContentView: View {
     }
 }
 
-/// "Check for Updates…" button wired to Sparkle. Follows Sparkle 2's
-/// documented SwiftUI pattern: a small view model publishes the updater's
-/// `canCheckForUpdates` so the button disables itself while a check is
-/// already running (or the updater isn't ready).
-@MainActor
-final class CheckForUpdatesViewModel: ObservableObject {
-    @Published var canCheckForUpdates = false
-
-    init(updater: SPUUpdater) {
-        updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
-    }
-}
-
-struct CheckForUpdatesView: View {
-    @ObservedObject private var viewModel: CheckForUpdatesViewModel
-    private let updater: SPUUpdater
-
-    init(updater: SPUStandardUpdaterController) {
-        self.updater = updater.updater
-        self.viewModel = CheckForUpdatesViewModel(updater: updater.updater)
-    }
-
-    var body: some View {
-        Button("Check for Updates…") { updater.checkForUpdates() }
-            .controlSize(.small)
-            .disabled(!viewModel.canCheckForUpdates)
-    }
-}
-
 /// One connected device: live status, throughput, reconnect + disconnect.
+@MainActor
 struct SessionRow: View {
     let title: String
     @ObservedObject var session: DeviceSession
@@ -1093,3 +1071,4 @@ struct SessionRow: View {
         }
     }
 }
+

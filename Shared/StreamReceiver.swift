@@ -1,17 +1,24 @@
-// PhoneReceiver — Milestone 1: receive H.264 over TCP and display it.
+// StreamReceiver — the listening half of OpenDisplay: receive H.264 over
+// TCP and display it. Compiled into BOTH targets (see project.yml): it is
+// the iOS app's core, and the Mac app's receiver mode (issue #82) reuses it
+// unchanged to turn a spare Mac into a display.
 //
 // Pipeline:  TCP socket -> deframe -> Annex B parse -> CMSampleBuffer
 //            -> AVSampleBufferDisplayLayer (decodes + renders)
 //
-// The phone LISTENS; the Mac connects (required for usbmux/USB).
+// The receiver LISTENS; the sending Mac connects (required for usbmux/USB).
 // Wire protocol: [4-byte big-endian length][Annex B payload].
+//
+// Keep this file UIKit/AppKit-free — platform specifics (device kind,
+// default names, cursor drawing, orientation) are injected by the app layer.
 
 import Foundation
 import Network
 import AVFoundation
 import CoreMedia
 import VideoToolbox
-import UIKit
+import QuartzCore
+import ImageIO
 
 /// One-second window of pipeline health, plus per-frame timing samples for
 /// the performance overlay graph.
@@ -31,6 +38,8 @@ struct PerfStats: Equatable {
     var rttMs = 0.0              // control-channel round trip
     var e2eSamples: [Double] = []  // last ~120 per-frame e2e latencies, ms
     var transport = "—"          // USB (loopback via usbmux) or WiFi
+    var cursorPerSec = 0         // cursor position updates applied (this window)
+    var cursorLost = 0           // UDP cursor datagrams missing or reordered (this window)
     var macDrops = 0             // enc + net drops (legacy total)
     var macEncDrops = 0          // Mac skipped capture: encoder busy
     var macNetDrops = 0          // Mac skipped capture: TCP queue full
@@ -44,7 +53,16 @@ struct PerfStats: Equatable {
     var photonP95 = 0.0
 }
 
-final class PhoneReceiver: ObservableObject {
+// MARK: - Peer-driven update signals (issue #132)
+
+/// What the connected (sending) Mac tells us about compatibility. The iOS app
+/// feeds this into its VersionGate; the Mac receiver panel shows it inline.
+enum PeerUpdateSignal: Equatable {
+    case updateReceiver(message: String, storeURL: URL)  // Mac sent `updateRequired`
+    case updateMac(message: String)                      // sender's pv is below our floor
+}
+
+final class StreamReceiver: ObservableObject {
 
     @Published var status = "Starting…"
     @Published var fps = 0
@@ -63,6 +81,37 @@ final class PhoneReceiver: ObservableObject {
     private var listener: NWListener?
     private var listenerHealthy = false
     private var connection: NWConnection?
+    // Cursor side channel: UDP on port+1. Cursor positions ride TCP behind
+    // multi-hundred-KB video frames, so over WiFi one late frame stalls the
+    // cursor with it (head-of-line blocking). UDP datagrams skip that queue.
+    // Optional end to end: advertised in hello only once the listener is
+    // ready, and the sender keeps using TCP when it is absent.
+    private var cursorListener: NWListener?
+    private var cursorListenerReady = false
+    private var cursorConnection: NWConnection?
+    private var cursorPortAnnounced = false
+    // Newcomer connections still proving themselves against a live session
+    // (see the listener). Tracked so stop() and adoption can cancel them —
+    // an untracked silent socket would sit parked forever and could even
+    // adopt into a receiver that was stopped in the meantime.
+    private var pendingConnections: [NWConnection] = []
+    // What the last hello advertised, to notice a cable appearing
+    // mid-session: plugging one creates new interfaces, and a sender can
+    // only probe addresses it has been told about.
+    private var lastAdvertisedAddrs: [String] = []
+    private var addrWatchTimer: DispatchSourceTimer?
+    // The cable upgrade (PROTOCOL.md 6.4) is Mac-to-Mac: only Mac
+    // receivers put addrs in their hello — see sendHello for why phones
+    // must not.
+    private var advertisesAddresses: Bool { deviceKind == "Mac" }
+    private var lastCursorSeq: UInt64 = 0
+    // Cursor channel health for the HUD/stats: how many positions landed and
+    // how many datagrams never did (sequence gaps + reordered drops). A
+    // stuttering pointer with a healthy count means the drawing side; a low
+    // count or high loss means the network.
+    private var cursorUpdatesThisWindow = 0
+    private var cursorLostThisWindow = 0
+    private var cursorPort: UInt16 { port &+ 1 }
     private let queue = DispatchQueue(label: "receiver.video")
     private var buffer = Data()
     private var formatDesc: CMVideoFormatDescription?
@@ -74,7 +123,10 @@ final class PhoneReceiver: ObservableObject {
     // so the listener can accept a fresh one.
     private var lastDataReceived = Date()
     private var port: UInt16 = 9000
-    private var monitorsStarted = false
+    // Liveness monitors: cancel-and-replace timers (not self-rescheduling
+    // asyncAfter chains) so stop() can actually silence them — see #75.
+    private var pingTimer: DispatchSourceTimer?
+    private var watchdogTimer: DispatchSourceTimer?
 
     private var framesThisWindow = 0
     private var fpsWindowStart = Date()
@@ -107,9 +159,17 @@ final class PhoneReceiver: ObservableObject {
 
     // Local cursor echo (both called on the main thread): position is
     // normalized [0,1] in video space; the sprite arrives as a PNG with its
-    // hotspot anchor and size normalized against the Mac display.
+    // hotspot anchor and size normalized against the Mac display. The anchor
+    // and normalized coordinates use a TOP-LEFT origin (video space).
     var onCursor: ((_ x: Double, _ y: Double, _ visible: Bool) -> Void)?
-    var onCursorImage: ((_ image: UIImage, _ anchor: CGPoint, _ normSize: CGSize) -> Void)?
+    var onCursorImage: ((_ image: CGImage, _ anchor: CGPoint, _ normSize: CGSize) -> Void)?
+    // The video view attaches only once frames are on screen — usually AFTER
+    // the connect-time sprite already arrived (the sender re-sends it only
+    // when the cursor changes shape, so a plain arrow would stay invisible
+    // forever). Keep the latest of each so a late-attaching view replays
+    // them. Main-thread, like the callbacks.
+    private(set) var cursorState: (x: Double, y: Double, visible: Bool) = (0.5, 0.5, false)
+    private(set) var cursorSprite: (image: CGImage, anchor: CGPoint, normSize: CGSize)?
 
     // Metal renderer path (experimental, "metalRenderer" setting): we decode
     // explicitly and hand BGRA buffers out; called on the receiver queue.
@@ -156,6 +216,18 @@ final class PhoneReceiver: ObservableObject {
     // the real name host-side via lockdownd regardless.
     var serviceName = "OpenDisplay"
 
+    // Platform identity, injected at init so this file stays UI-framework-free.
+    /// "iPhone" / "iPad" / "Mac" — announced in the hello (the sender names
+    /// the virtual display after it) and used in peer-update copy.
+    private let deviceKind: String
+    // Decode ceiling advertised in hello (PROTOCOL.md 6.5): the largest
+    // stream this machine can actually sustain, which a big panel says
+    // nothing about. nil = advertise nothing (sender streams full size).
+    private let maxEncodeWide: Int?
+    private let maxEncodeHigh: Int?
+    /// What to advertise when the user-set service name is empty.
+    private let fallbackServiceName: String
+
     // Stable per-install identity, advertised in the Bonjour TXT record and
     // sent in every hello. The Mac uses it to recognize "same device, other
     // transport" — the service name can't serve that role since it's
@@ -181,7 +253,7 @@ final class PhoneReceiver: ObservableObject {
     /// Update the advertised name and re-publish if already listening.
     func setServiceName(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolved = trimmed.isEmpty ? UIDevice.current.name : trimmed
+        let resolved = trimmed.isEmpty ? fallbackServiceName : trimmed
         queue.async {
             guard resolved != self.serviceName else { return }
             self.serviceName = resolved
@@ -203,28 +275,59 @@ final class PhoneReceiver: ObservableObject {
     }
 
     func setOrientation(portrait: Bool) {
-        let w = portrait ? nativeShort : nativeLong
-        let h = portrait ? nativeLong : nativeShort
-        guard w > 0, w != devicePixelsWide else { return }
+        guard nativeLong > 0 else { return }
+        setPanel(pixelsWide: portrait ? nativeShort : nativeLong,
+                 pixelsHigh: portrait ? nativeLong : nativeShort,
+                 scale: deviceScale)
+    }
+
+    /// Announce the panel this receiver renders onto. Called before start()
+    /// and again whenever it changes (iOS rotation via setOrientation, macOS
+    /// display-mode changes) — a live connection re-sends hello so the sender
+    /// rebuilds the virtual display for the new dimensions.
+    func setPanel(pixelsWide w: Int, pixelsHigh h: Int, scale: Double) {
+        deviceScale = scale
+        guard w > 0, h > 0, w != devicePixelsWide || h != devicePixelsHigh else { return }
         devicePixelsWide = w
         devicePixelsHigh = h
-        Log.info("orientation changed -> \(portrait ? "portrait" : "landscape") \(w)x\(h)")
+        Log.info("panel changed -> \(w)x\(h) @\(scale)x")
         if let connection { sendHello(on: connection) }
     }
 
-    init(displayLayer: AVSampleBufferDisplayLayer) {
+    init(displayLayer: AVSampleBufferDisplayLayer, deviceKind: String,
+         fallbackServiceName: String,
+         maxEncodeWide: Int? = nil, maxEncodeHigh: Int? = nil) {
         self.displayLayer = displayLayer
+        self.deviceKind = deviceKind
+        self.fallbackServiceName = fallbackServiceName
+        self.maxEncodeWide = maxEncodeWide
+        self.maxEncodeHigh = maxEncodeHigh
         displayLayer.videoGravity = .resizeAspect
     }
 
     func start(port: UInt16 = 9000) {
         self.port = port
-        queue.async { self.startListener() }
-        if !monitorsStarted {
-            monitorsStarted = true
-            schedulePing()
-            scheduleWatchdog()
+        queue.async {
+            self.startListener()
+            self.armLivenessTimers()
         }
+    }
+
+    /// Leave receiver duty for good: announce "closing" to a live sender (so
+    /// it ends the session instead of waiting for a wake), drop the
+    /// connection and the listener, and silence the liveness timers. The Mac
+    /// app calls this when the user leaves receiver mode or quits; the
+    /// instance is discarded afterwards (start() re-arms if it isn't).
+    func stop(completion: (() -> Void)? = nil) {
+        queue.async {
+            self.pingTimer?.cancel(); self.pingTimer = nil
+            self.watchdogTimer?.cancel(); self.watchdogTimer = nil
+            self.addrWatchTimer?.cancel(); self.addrWatchTimer = nil
+            self.pendingConnections.forEach { $0.cancel() }
+            self.pendingConnections.removeAll()
+        }
+        closeSession(announcing: WireMessage.closing, status: "Stopped",
+                     completion: completion)
     }
 
     /// Recreate the listener if it isn't healthy — called when the app
@@ -292,6 +395,7 @@ final class PhoneReceiver: ObservableObject {
                 self.listener?.cancel()
                 self.listener = nil
                 self.listenerHealthy = false
+                self.stopCursorListener()
                 self.setConnected(false)
                 self.setStatus(status)
                 completion?()
@@ -316,6 +420,113 @@ final class PhoneReceiver: ObservableObject {
         listener = nil
         listenerHealthy = false
         startListener()
+    }
+
+    /// The UDP cursor listener follows the TCP listener's lifecycle: created
+    /// right after it, torn down with it. Losing it is never fatal; the
+    /// sender falls back to TCP when hello carries no cursorPort.
+    private func startCursorListener() {
+        stopCursorListener()
+        let params = NWParameters.udp
+        params.allowLocalEndpointReuse = true
+        params.includePeerToPeer = true
+        params.serviceClass = .responsiveData
+        let udp: NWListener
+        do {
+            udp = try NWListener(using: params, on: NWEndpoint.Port(rawValue: cursorPort)!)
+        } catch {
+            Log.info("cursor listener failed on udp :\(cursorPort): \(error) (cursor stays on TCP)")
+            return
+        }
+        cursorListener = udp
+        udp.newConnectionHandler = { [weak self] conn in
+            guard let self, self.cursorListener === udp else { conn.cancel(); return }
+            // A UDP "connection" is one remote host:port flow. The newest
+            // one is the live sender (a rebuilt sender socket gets a fresh
+            // ephemeral port) and starts its sequence over.
+            self.cursorConnection?.cancel()
+            self.cursorConnection = conn
+            self.lastCursorSeq = 0
+            conn.stateUpdateHandler = { [weak self] state in
+                guard let self, self.cursorConnection === conn else { return }
+                if case .failed(let error) = state {
+                    Log.info("cursor channel failed: \(error)")
+                    self.cursorConnection = nil
+                }
+            }
+            conn.start(queue: self.queue)
+            self.receiveCursorDatagrams(on: conn)
+        }
+        udp.stateUpdateHandler = { [weak self] state in
+            guard let self, self.cursorListener === udp else { return }
+            switch state {
+            case .ready:
+                self.cursorListenerReady = true
+                Log.info("cursor listener ready on udp :\(self.cursorPort)")
+                // hello may already be out without the port (the sender
+                // connected before UDP bound); re-send so it can switch.
+                if let connection, connection.state == .ready, !self.cursorPortAnnounced {
+                    self.sendHello(on: connection)
+                }
+            case .failed(let error):
+                Log.info("cursor listener failed: \(error) (cursor stays on TCP)")
+                let wasAnnounced = self.cursorPortAnnounced
+                self.stopCursorListener()
+                // Withdraw the offer: a hello without cursorPort makes the
+                // sender close its channel and return to TCP.
+                if wasAnnounced, let connection = self.connection, connection.state == .ready {
+                    self.sendHello(on: connection)
+                }
+            case .cancelled:
+                self.cursorListenerReady = false
+            default: break
+            }
+        }
+        udp.start(queue: queue)
+    }
+
+    private func stopCursorListener() {
+        cursorConnection?.cancel()
+        cursorConnection = nil
+        cursorListener?.cancel()
+        cursorListener = nil
+        cursorListenerReady = false
+        cursorPortAnnounced = false
+    }
+
+    private func receiveCursorDatagrams(on conn: NWConnection) {
+        conn.receiveMessage { [weak self] data, _, _, error in
+            guard let self, self.cursorConnection === conn else { return }
+            if let error {
+                Log.info("cursor channel receive error: \(error)")
+                return
+            }
+            if let data, !data.isEmpty { self.handleCursorDatagram(data) }
+            self.receiveCursorDatagrams(on: conn)
+        }
+    }
+
+    /// One datagram = one cursor JSON plus `s`, a per-flow sequence. UDP can
+    /// reorder, and a stale position after a fresh one reads as jitter, so
+    /// anything at or below the last seen sequence is dropped.
+    private func handleCursorDatagram(_ data: Data) {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["type"] as? String == "cursor",
+              let seq = (obj["s"] as? NSNumber)?.uint64Value else { return }
+        // Loss accounting only; the floor itself is enforced in applyCursor,
+        // shared with TCP. Counts run slightly hot during the brief window
+        // where the sender still mirrors to TCP (duplicates read as drops).
+        guard seq > lastCursorSeq else { cursorLostThisWindow += 1; return }
+        if lastCursorSeq == 0 {
+            // First datagram of this flow: tell the sender the channel truly
+            // delivers (UDP .ready proves only a local route — a firewalled
+            // port would otherwise eat the cursor forever, PROTOCOL.md 6.3).
+            Log.info("cursor channel: receiving datagrams")
+            sendControl(["type": "cursorAck"])
+        } else {
+            cursorLostThisWindow += Int(seq - lastCursorSeq - 1)
+        }
+        applyCursor(obj)
     }
 
     private func startListener() {
@@ -344,23 +555,48 @@ final class PhoneReceiver: ObservableObject {
             let peer = String(describing: conn.endpoint)
             self.transport = (peer.hasPrefix("127.0.0.1") || peer.hasPrefix("::1")
                               || peer.hasPrefix("localhost")) ? "USB" : "WiFi"
-            // Replace any existing connection and reset decoder state.
-            self.connection?.cancel()
-            self.connection = conn
-            self.resetStreamState()
-            conn.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    self?.lastDataReceived = Date()
-                    self?.setConnected(true)
-                    self?.sendHello(on: conn)
-                case .failed, .cancelled:
-                    self?.setConnected(false)
-                default: break
+            // A Bonjour dial races IPv6 and IPv4 and both handshakes can
+            // complete; the sender cancels its loser within milliseconds.
+            // Adopting every newcomer at once evicted the winner for a
+            // connection that was already dying (seen in the field as a
+            // reset-by-peer storm). With a connection in hand, a newcomer
+            // has to stay alive for a moment before it replaces it.
+            // A closed socket still reads as .ready until a receive hits
+            // EOF, so the proof is bytes: greet the newcomer and adopt it
+            // the moment it streams something back; a socket that closes
+            // or errors first is discarded and the session stays put.
+            if let current = self.connection, current.state != .cancelled,
+               !Self.isFailed(current.state) {
+                self.pendingConnections.append(conn)
+                conn.stateUpdateHandler = { [weak self] state in
+                    guard let self, case .ready = state else { return }
+                    self.sendHello(on: conn)
+                    conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 18) {
+                        [weak self] data, _, isComplete, error in
+                        guard let self else { return }
+                        // Only a still-tracked candidate may adopt: adoption
+                        // of a rival and stop() both clear the list, so a
+                        // late callback can't evict a session or resurrect a
+                        // stopped receiver.
+                        guard self.pendingConnections.contains(where: { $0 === conn }) else {
+                            conn.cancel()
+                            return
+                        }
+                        self.pendingConnections.removeAll { $0 === conn }
+                        if let data, !data.isEmpty {
+                            self.adopt(conn, greeted: true, initialData: data)
+                        } else {
+                            Log.info("ignored a twin connection that closed at once"
+                                     + (error.map { " (\($0))" } ?? ""))
+                            conn.cancel()
+                        }
+                        _ = isComplete
+                    }
                 }
+                conn.start(queue: self.queue)
+            } else {
+                self.adopt(conn)
             }
-            conn.start(queue: self.queue)
-            self.receive(on: conn)
         }
         listener?.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
@@ -379,18 +615,107 @@ final class PhoneReceiver: ObservableObject {
             }
         }
         listener?.start(queue: queue)
+        startCursorListener()
+    }
+
+    /// Make `conn` the session: replace any existing connection and reset
+    /// decoder state. `greeted` marks a newcomer that already got its hello
+    /// while it proved itself (see the listener), with the bytes it sent
+    /// back in `initialData`; a second hello would make the sender rebuild.
+    private func adopt(_ conn: NWConnection, greeted: Bool = false, initialData: Data? = nil) {
+        if greeted { Log.info("newcomer proved itself — adopting it as the session") }
+        connection?.cancel()
+        connection = conn
+        // The race is decided: rival candidates die here.
+        for pending in pendingConnections where pending !== conn { pending.cancel() }
+        pendingConnections.removeAll()
+        resetStreamState()
+        lastCursorSeq = 0   // the sender restarts its cursor sequence per session
+        cursorPortAnnounced = false
+        // Hide the previous sender's cursor: replayed into a fresh video view
+        // it would ghost over a new sender that never sends one (mirror mode
+        // hides no local cursor and streams no sprite).
+        DispatchQueue.main.async {
+            self.cursorState = (0.5, 0.5, false)
+            self.cursorSprite = nil
+            self.onCursor?(0.5, 0.5, false)
+        }
+        let onReady: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.lastDataReceived = Date()
+            self.setConnected(true)
+            if !greeted { self.sendHello(on: conn) }
+        }
+        conn.stateUpdateHandler = { [weak self] state in
+            guard let self, conn === self.connection else { return }   // replaced: stay quiet
+            switch state {
+            case .ready: onReady()
+            case .failed, .cancelled: self.setConnected(false)
+            default: break
+            }
+        }
+        if conn.state == .ready {
+            onReady()   // already up: the handler will not fire again
+        } else {
+            conn.start(queue: queue)
+        }
+        if let initialData, !initialData.isEmpty {
+            bytesThisWindow += initialData.count
+            buffer.append(initialData)
+            drainFrames()
+        }
+        receive(on: conn)
+    }
+
+    private static func isFailed(_ state: NWConnection.State) -> Bool {
+        if case .failed = state { return true }
+        return false
     }
 
     // MARK: - Liveness (ping + watchdog)
 
-    private func schedulePing() {
-        queue.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self else { return }
-            if self.connection?.state == .ready {
-                self.sendControl(["type": "ping", "t": self.nowMs])
-            }
-            self.schedulePing()
+    /// Arm (or re-arm) the ping and watchdog timers on the receiver queue.
+    private func armLivenessTimers() {
+        pingTimer?.cancel()
+        let ping = DispatchSource.makeTimerSource(queue: queue)
+        ping.schedule(deadline: .now() + 2.0, repeating: 2.0)
+        ping.setEventHandler { [weak self] in
+            guard let self, self.connection?.state == .ready else { return }
+            self.sendControl(["type": "ping", "t": self.nowMs])
         }
+        ping.resume()
+        pingTimer = ping
+
+        addrWatchTimer?.cancel()
+        if advertisesAddresses {
+            let addrWatch = DispatchSource.makeTimerSource(queue: queue)
+            addrWatch.schedule(deadline: .now() + 5.0, repeating: 5.0)
+            addrWatch.setEventHandler { [weak self] in
+                guard let self, let conn = self.connection, conn.state == .ready else { return }
+                let now = Self.reachableAddresses()
+                guard now != self.lastAdvertisedAddrs else { return }
+                // A cable was plugged (or pulled) mid-session: tell the sender,
+                // it re-probes on the fresh list (PROTOCOL.md 6.4).
+                Log.info("reachable addresses changed — re-sending hello")
+                self.sendHello(on: conn)
+            }
+            addrWatch.resume()
+            addrWatchTimer = addrWatch
+        }
+
+        watchdogTimer?.cancel()
+        let watchdog = DispatchSource.makeTimerSource(queue: queue)
+        watchdog.schedule(deadline: .now() + 2.0, repeating: 2.0)
+        watchdog.setEventHandler { [weak self] in
+            guard let self, let conn = self.connection, conn.state == .ready,
+                  Date().timeIntervalSince(self.lastDataReceived) > 5 else { return }
+            Log.info("watchdog: nothing from the Mac for >5s — dropping connection")
+            conn.cancel()
+            self.connection = nil
+            self.setConnected(false)
+        }
+        watchdog.resume()
+        watchdogTimer = watchdog
     }
 
     /// JSON on the video channel (pong, ping liveness) — payloads starting '{'.
@@ -426,18 +751,19 @@ final class PhoneReceiver: ObservableObject {
             macInputP95 = obj["inp95"] as? Double ?? macInputP95
             macCapFps = obj["capFps"] as? Int ?? macCapFps
         case "cursor":
-            let visible = (obj["v"] as? Int ?? 0) == 1
-            let x = obj["x"] as? Double ?? 0
-            let y = obj["y"] as? Double ?? 0
-            DispatchQueue.main.async { self.onCursor?(x, y, visible) }
+            applyCursor(obj)
         case "cursorImg":
             guard let b64 = obj["png"] as? String,
                   let png = Data(base64Encoded: b64),
-                  let image = UIImage(data: png),
+                  let source = CGImageSourceCreateWithData(png as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
                   let nw = obj["nw"] as? Double, let nh = obj["nh"] as? Double else { return }
             let anchor = CGPoint(x: obj["ax"] as? Double ?? 0, y: obj["ay"] as? Double ?? 0)
             let normSize = CGSize(width: nw, height: nh)
-            DispatchQueue.main.async { self.onCursorImage?(image, anchor, normSize) }
+            DispatchQueue.main.async {
+                self.cursorSprite = (image, anchor, normSize)
+                self.onCursorImage?(image, anchor, normSize)
+            }
         case WireMessage.welcome:
             // The Mac identified itself (issue #132). If it speaks a protocol
             // older than we support, it's the Mac that needs updating — and an
@@ -455,23 +781,30 @@ final class PhoneReceiver: ObservableObject {
             let message = obj["message"] as? String
                 ?? "Update OpenDisplay from the App Store to keep using your second display."
             let store = (obj["store"] as? String).flatMap { URL(string: $0) } ?? AppStore.updateURL
-            DispatchQueue.main.async { self.peerSignal = .updateIPhone(message: message, storeURL: store) }
+            DispatchQueue.main.async { self.peerSignal = .updateReceiver(message: message, storeURL: store) }
         default:
             break
         }
     }
 
-    private func scheduleWatchdog() {
-        queue.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self else { return }
-            if let conn = self.connection, conn.state == .ready,
-               Date().timeIntervalSince(self.lastDataReceived) > 5 {
-                Log.info("watchdog: nothing from the Mac for >5s — dropping connection")
-                conn.cancel()
-                self.connection = nil
-                self.setConnected(false)
-            }
-            self.scheduleWatchdog()
+    /// Shared by the TCP control path and the UDP side channel so both feed
+    /// the same cursorState buffering and onCursor callback. The sequence
+    /// floor lives here so the two paths can't reorder each other: around a
+    /// channel switch a TCP frame queued behind video would otherwise land
+    /// after (and override) a newer UDP position. Old senders put no `s` on
+    /// TCP frames; those apply unconditionally, as before.
+    private func applyCursor(_ obj: [String: Any]) {
+        if let seq = (obj["s"] as? NSNumber)?.uint64Value {
+            guard seq > lastCursorSeq else { return }
+            lastCursorSeq = seq
+        }
+        let visible = (obj["v"] as? Int ?? 0) == 1
+        let x = obj["x"] as? Double ?? 0
+        let y = obj["y"] as? Double ?? 0
+        cursorUpdatesThisWindow += 1
+        DispatchQueue.main.async {
+            self.cursorState = (x, y, visible)
+            self.onCursor?(x, y, visible)
         }
     }
 
@@ -495,16 +828,80 @@ final class PhoneReceiver: ObservableObject {
     // MARK: - Control messages (phone -> Mac)
 
     private func sendHello(on conn: NWConnection) {
-        sendControl([
+        var hello: [String: Any] = [
             "type": "hello",
             "pixelsWide": devicePixelsWide,
             "pixelsHigh": devicePixelsHigh,
             "scale": deviceScale,
-            "device": UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone",
+            "device": deviceKind,
             "id": Self.installID,
             "pv": WireProtocol.version,   // issue #132 — absent on old receivers
-        ], on: conn)
-        Log.info("hello sent")
+        ]
+        // Additive capability: only offered while the UDP listener is bound,
+        // so a sender never dials a port nobody answers on.
+        if cursorListenerReady { hello["cursorPort"] = Int(cursorPort) }
+        // Additive: decode ceiling (PROTOCOL.md 6.5) — ask for the full
+        // desktop but a stream no larger than this machine can decode.
+        if let maxEncodeWide, let maxEncodeHigh {
+            hello["maxEncodeWide"] = maxEncodeWide
+            hello["maxEncodeHigh"] = maxEncodeHigh
+        }
+        // Additive: the addresses this receiver can be reached on, so the
+        // sender can probe for a better (cabled) path and migrate a WiFi
+        // session onto it — mDNS resolution under an interface-restricted
+        // dial stalls, a literal address does not (PROTOCOL.md 6.4).
+        // Mac receivers only: a cabled phone reaches the sender over
+        // usbmuxd, and advertising a phone's WiFi fe80 would invite a
+        // false "upgrade" onto a bridged-LAN path that still crosses the
+        // phone's radio — and then have the session classified as a cable
+        // whose loss must end it instead of reconnecting.
+        let addrs = advertisesAddresses ? Self.reachableAddresses() : []
+        if !addrs.isEmpty { hello["addrs"] = addrs }
+        lastAdvertisedAddrs = addrs
+        cursorPortAnnounced = cursorListenerReady
+        sendControl(hello, on: conn)
+        Log.info("hello sent\(cursorListenerReady ? " (cursorPort \(cursorPort))" : "")")
+    }
+
+    /// Every IP address of an up, non-loopback interface, for hello.addrs.
+    /// Link-local IPv6 is sent bare (no scope): the zone id only means
+    /// something on the machine holding the interface, so the sender scopes
+    /// it to each of its own candidate interfaces when probing. Virtual and
+    /// peer-to-peer interfaces (awdl/llw/utun) never carry this traffic and
+    /// are skipped.
+    private static func reachableAddresses() -> [String] {
+        var result: [String] = []
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return result }
+        defer { freeifaddrs(list) }
+        for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let ifa = ptr.pointee
+            let flags = Int32(ifa.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+                  let sa = ifa.ifa_addr else { continue }
+            let name = String(cString: ifa.ifa_name)
+            // anpi* is Apple's internal peripheral/debug interface: TCP
+            // handshakes complete over it but it cannot carry the stream —
+            // a session migrated onto it stalls within seconds (field log
+            // 18:59). The user-facing USB-C host-to-host link is a plain en.
+            if name.hasPrefix("awdl") || name.hasPrefix("llw") || name.hasPrefix("utun")
+                || name.hasPrefix("pdp_ip") || name.hasPrefix("anpi") { continue }
+            let family = sa.pointee.sa_family
+            guard family == UInt8(AF_INET) || family == UInt8(AF_INET6) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let len = family == UInt8(AF_INET)
+                ? socklen_t(MemoryLayout<sockaddr_in>.size)
+                : socklen_t(MemoryLayout<sockaddr_in6>.size)
+            guard getnameinfo(sa, len, &host, socklen_t(host.count),
+                              nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            var addr = String(cString: host)
+            // getnameinfo appends %scope to link-local IPv6 — strip it, the
+            // receiver-side zone id is meaningless to the sender.
+            if let percent = addr.firstIndex(of: "%") { addr = String(addr[..<percent]) }
+            if !result.contains(addr) { result.append(addr) }
+            if result.count >= 12 { break }
+        }
+        return result
     }
 
     /// Touch events: x/y normalized [0,1] in video space, origin top-left.
@@ -563,7 +960,9 @@ final class PhoneReceiver: ObservableObject {
     private func receive(on conn: NWConnection) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 18) {
             [weak self] data, _, isComplete, error in
-            guard let self else { return }
+            // A replaced connection's last callback must not touch the
+            // session (its EOF used to flip `connected` off for the new one).
+            guard let self, conn === self.connection else { return }
             if let data, !data.isEmpty {
                 self.lastDataReceived = Date()
                 self.bytesThisWindow += data.count
@@ -807,6 +1206,8 @@ final class PhoneReceiver: ObservableObject {
                 stats.maxFrameMs = frameIntervals.max() ?? 0
             }
             stats.stalls = stallsThisWindow
+            stats.cursorPerSec = Int(Double(cursorUpdatesThisWindow) / elapsed)
+            stats.cursorLost = cursorLostThisWindow
             stats.decodeFlushes = decodeFlushes
             stats.e2eP50 = percentile(e2eWindow, 0.5)
             stats.e2eP95 = percentile(e2eWindow, 0.95)
@@ -827,6 +1228,8 @@ final class PhoneReceiver: ObservableObject {
             framesThisWindow = 0
             bytesThisWindow = 0
             stallsThisWindow = 0
+            cursorUpdatesThisWindow = 0
+            cursorLostThisWindow = 0
             fpsWindowStart = now
 
             // Every 5s, report the aggregate to the Mac so its log holds the
@@ -844,6 +1247,8 @@ final class PhoneReceiver: ObservableObject {
                     "enc50": stats.encodeP50.rounded(),
                     "rtt": lastRttMs.rounded(),
                     "stalls": stats.stalls,
+                    "cur": stats.cursorPerSec,
+                    "curLost": stats.cursorLost,
                     "inp50": macInputP50.rounded(),
                     "capFps": macCapFps,
                     "dec50": stats.decodeP50.rounded(),
