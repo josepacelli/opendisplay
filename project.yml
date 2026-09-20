@@ -151,8 +151,11 @@ targets:
     sources:
       - MacTests
       - Mac/DisplayArrangement.swift
+      - Mac/StreamConfiguration.swift
+      - Mac/VirtualCanvasSizing.swift
       - Mac/Log.swift
       - Mac/LogPolicies.swift
+      - Shared/Protocol.swift
       - Shared/LogSnapshot.swift
     settings:
       base:
@@ -167,7 +170,10 @@ targets:
   OpenSidecariOS:
     type: application
     platform: iOS
-    deploymentTarget: "16.4"
+    # iOS 15 is the lowest floor Xcode 27's SDK allows and the last stop that
+    # revives hardware (iPad Air 2, iPad mini 4, iPhone 6s/7/SE). See #72.
+    # Anything newer is used behind #available, never as a floor.
+    deploymentTarget: "15.0"
     sources:
       - iOS
       - Shared

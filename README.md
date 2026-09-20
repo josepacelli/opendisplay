@@ -128,6 +128,32 @@ Thunderbolt 2 cable.
 Input from the receiving Mac's keyboard and mouse is a follow-up
 ([#147](https://github.com/peetzweg/opendisplay/issues/147)).
 
+**Do the Larger Text / More Space display settings affect Mac receiver performance?**
+Yes, in Extend mode. On a Mac receiver, this setting changes the logical size
+of the desktop, not only the apparent text size. OpenDisplay advertises that
+desktop at Retina scale, and the sender creates, renders, captures, and encodes
+a virtual display with the same working area. **More Space** therefore gives
+you room for more windows, but starts with a larger source surface and puts
+more pressure on rendering, capture, scaling, encoding, and the network. At a
+fixed bitrate it also gives each pixel less data. Moving toward **Larger Text**
+reduces that work and can be noticeably smoother, especially over WiFi.
+
+For example, on the 5K iMac used for testing, the less-spacious setting offers
+a 1600×900-point desktop and a 3200×1800 stream at up to 60 fps. More Space
+offers a 3200×1800-point desktop, which is rendered at 6400×3600; the current
+H.264 path safely scales that to 4096×2304 at up to 55 fps. That is about 50%
+more encoded pixels per second, in addition to the four-times-larger source
+surface. Exact sizes vary by Mac.
+
+Start with the receiver's **Default** setting. Move one or more steps toward
+**Larger Text** when smoothness and latency matter most, or toward **More
+Space** when desktop area matters and you have a fast wired connection. The
+sender's Best/Balanced/Fast setting can reduce the transmitted image further
+without changing the desktop's working area. Fullscreen changes presentation
+and compositor load, but not the negotiated stream resolution. In Mirror mode,
+the sending Mac's display determines the capture resolution, so the receiver's
+display setting has much less effect.
+
 **Why H.264 and not HEVC/AV1?** Hardware H.264 encode/decode is universally
 fast and the latency is excellent. HEVC is a planned option for better
 quality-per-bit.
@@ -153,7 +179,7 @@ The capture/streaming pipeline itself uses only public APIs.
 
 ## Compatible apps
 
-The official apps cover a Mac sender and an iPhone/iPad receiver on iOS 16.4+.
+The official apps cover a Mac sender and an iPhone/iPad receiver on iOS 15+.
 Other people have built their own clients that speak the same protocol, so
 you can also use an Android device or an older iPad as a display, or drive
 one from Linux. The wire protocol is specified in
@@ -192,9 +218,10 @@ CGVirtualDisplay  ← macOS believes a monitor is attached
 
 The **phone listens and the Mac connects** — that ordering is what makes the
 exact same code work over USB (via the `usbmuxd` daemon built into every
-macOS install) and WiFi. The phone
-announces its native panel size; the Mac creates a `CGVirtualDisplay` at
-exactly half that in points (@2x HiDPI) and streams the pixels back.
+macOS install) and WiFi. An iPhone or iPad announces its panel pixels; a Mac
+receiver announces the backing size of its current scaled display mode. The
+sender creates an @2x `CGVirtualDisplay` with the corresponding logical working
+area, negotiates a codec-safe stream raster, and streams the pixels back.
 
 Everything that crosses the socket — framing, discovery, the video format,
 every control message — is specified in [PROTOCOL.md](PROTOCOL.md). How the
@@ -225,10 +252,14 @@ the same way; both apps update themselves via Sparkle.
 
 ### iPhone app
 
-Needs **iOS / iPadOS 16 or newer** — including the 16.7.x line, which is where
-Apple left the iPad 5 (2017), the iPad Pro 1st gen, the iPhone 8 and the
-iPhone X. If your iPad can't be updated past 16.7, it can still be a second
-display ([#72](https://github.com/peetzweg/opendisplay/issues/72)).
+Needs **iOS / iPadOS 15 or newer**. That reaches the 16.7.x line (iPad 5,
+iPad Pro 1st gen, iPhone 8, iPhone X) and the 15.8.x line, where Apple left
+the iPad Air 2, the iPad mini 4, the iPhone 6s, 7 and the first SE. If your
+iPad can't be updated past 15.8, it can still be a second display
+([#72](https://github.com/peetzweg/opendisplay/issues/72)). Apple Pencil
+hover needs iPadOS 16.4 and a hover-capable iPad and Pencil pairing (see
+[Apple's list](https://support.apple.com/guide/ipad/ipadc55b6c7a/ipados));
+everything else works the same on every supported version.
 
 - **TestFlight** (recommended): join the public beta at
   [testflight.apple.com/join/3NYaY11c](https://testflight.apple.com/join/3NYaY11c).
@@ -242,6 +273,9 @@ display ([#72](https://github.com/peetzweg/opendisplay/issues/72)).
 ```sh
 brew install xcodegen   # project generation
 ```
+
+Maintainers preparing a release should use the compatibility and publishing
+checks in [RELEASING.md](RELEASING.md).
 
 Xcode 15+ and a free or paid Apple developer account (to sideload the iOS
 app onto your device).

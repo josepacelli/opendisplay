@@ -51,3 +51,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
+
+      # Shared protocol/receiver code is also compiled into the universal
+      # iPhone+iPad app. Catch a mobile-only compile or asset failure on the
+      # change that introduced it, before release-please creates a tag and the
+      # release workflow attempts its TestFlight upload.
+      - name: Build iOS and iPadOS receiver app
+        run: |
+          xcodebuild build \
+            -project OpenSidecar.xcodeproj \
+            -scheme OpenSidecariOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""

@@ -40,11 +40,12 @@ final class ReceiverController: ObservableObject {
 
     func start() {
         guard receiver == nil else { return }
-        // 4096x2304 is H.264's practical hardware-decode ceiling: end-to-end
-        // playback stops below 5120 wide on every Mac measured, including an
-        // M4 Pro — a format limit, not an age one. A 5K/6K panel still gets
-        // its full desktop; the stream is capped and upscaled. Revisit when
-        // an HEVC path lands (HEVC decodes 5K fine even on a 2017 iMac).
+        // Legacy senders understand only this rectangle; new senders also
+        // receive it as an H.264 capability and intersect it with their own
+        // codec constraints. 4096x2304 is the practical H.264 hardware-decode
+        // ceiling measured across Intel and Apple-silicon Macs, rather than an
+        // iMac-model exception. A 5K/6K panel keeps its full desktop geometry
+        // while the video is scaled. Revisit the envelope with the HEVC path.
         let receiver = StreamReceiver(displayLayer: AVSampleBufferDisplayLayer(),
                                       deviceKind: "Mac",
                                       fallbackServiceName: fallbackName,
@@ -158,6 +159,13 @@ final class ReceiverController: ObservableObject {
         guard let screen = NSScreen.screens.first else { return }
         let scale = max(screen.backingScaleFactor, 2)
         let height = screen.frame.height - screen.safeAreaInsets.top
+        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+            as? CGDirectDisplayID,
+           let mode = CGDisplayCopyDisplayMode(number), mode.refreshRate > 0 {
+            receiver.setDisplayMaxFrameRate(Int(mode.refreshRate.rounded()))
+        } else {
+            receiver.setDisplayMaxFrameRate(60)
+        }
         if screen.backingScaleFactor < 2 {
             Log.info("non-Retina panel (\(screen.backingScaleFactor)x) — announcing points at 2x")
         }

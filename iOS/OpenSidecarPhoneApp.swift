@@ -100,7 +100,7 @@ struct ReceiverScreen: View {
         }
         .ignoresSafeArea(edges: isStreaming ? .all : [])
         .statusBarHidden(isStreaming)
-        .persistentSystemOverlays(isStreaming ? .hidden : .automatic)
+        .systemOverlaysHidden(isStreaming)
         .sheet(isPresented: $showSettings) {
             SettingsView(receiver: model.receiver)
         }
@@ -246,7 +246,7 @@ struct OnboardingView: View {
     let onClose: () -> Void
 
     var body: some View {
-        NavigationStack {
+        AdaptiveNavigation {
             ScrollView {
                 VStack(spacing: 28) {
                     Image(systemName: "laptopcomputer.and.iphone")
@@ -318,15 +318,15 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        AdaptiveNavigation {
             Form {
                 Section("Status") {
-                    LabeledContent("Listening", value: "Port 9000")
-                    LabeledContent("Connection",
-                                   value: receiver.connected ? "Connected" : "Waiting for Mac")
+                    LabeledRow("Listening", value: "Port 9000")
+                    LabeledRow("Connection",
+                               value: receiver.connected ? "Connected" : "Waiting for Mac")
                     if receiver.videoSize != .zero {
-                        LabeledContent("Stream",
-                                       value: "\(Int(receiver.videoSize.width))×\(Int(receiver.videoSize.height)) @ \(receiver.fps) fps")
+                        LabeledRow("Stream",
+                                   value: "\(Int(receiver.videoSize.width))×\(Int(receiver.videoSize.height)) @ \(receiver.fps) fps")
                     }
                 }
 
@@ -398,7 +398,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: version)
+                    LabeledRow("Version", value: version)
                     Link(destination: URL(string: "https://github.com/peetzweg/opendisplay")!) {
                         Label("GitHub — peetzweg/opendisplay", systemImage: "link")
                     }
@@ -414,6 +414,57 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+/// `NavigationStack` where it exists (iOS 16), a single-column
+/// `NavigationView` on the iOS 15 floor. Both sheets here are one level deep,
+/// so the two behave the same; this keeps the modern API where it is available.
+struct AdaptiveNavigation<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        if #available(iOS 16, *) {
+            NavigationStack { content() }
+        } else {
+            NavigationView { content() }
+                .navigationViewStyle(.stack)
+        }
+    }
+}
+
+/// `LabeledContent` where it exists (iOS 16, with its VoiceOver pairing of
+/// label and value); the equivalent HStack on the iOS 15 floor.
+struct LabeledRow: View {
+    let title: String
+    let value: String
+    init(_ title: String, value: String) { self.title = title; self.value = value }
+    var body: some View {
+        if #available(iOS 16, *) {
+            LabeledContent(title, value: value)
+        } else {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+extension View {
+    /// Hide the home indicator while streaming. `persistentSystemOverlays`
+    /// is iOS 16; on iOS 15 the indicator simply stays, which is what the
+    /// app did before it existed.
+    @ViewBuilder
+    func systemOverlaysHidden(_ hidden: Bool) -> some View {
+        if #available(iOS 16, *) {
+            persistentSystemOverlays(hidden ? .hidden : .automatic)
+        } else {
+            self
         }
     }
 }
@@ -451,6 +502,10 @@ final class ReceiverModel: ObservableObject {
         receiver.setNativePanel(long: Int(max(native.width, native.height)),
                                 short: Int(min(native.width, native.height)),
                                 scale: Double(UIScreen.main.nativeScale))
+        receiver.setDisplayMaxFrameRate(UIScreen.main.maximumFramesPerSecond)
+        if let budget = DecodeBudget.maxPixelsPerSecond(model: DecodeBudget.currentModel) {
+            receiver.setDecodeBudget(maxPixelsPerSecond: budget)
+        }
         let savedName = UserDefaults.standard.string(forKey: "deviceName")
         receiver.serviceName = (savedName?.isEmpty == false) ? savedName! : UIDevice.current.name
         receiver.objectWillChange
@@ -971,12 +1026,18 @@ final class InputCaptureEngine: NSObject {
         hostView = view
         view.isMultipleTouchEnabled = true
 
-        let hover = UIHoverGestureRecognizer(target: self, action: #selector(hoverChanged(_:)))
-        hover.allowedTouchTypes = [UITouch.TouchType.pencil.rawValue as NSNumber]
-        view.addGestureRecognizer(hover)
+        // Hover tilt/azimuth on the recognizer is iOS 16.4. Pencil hover needs
+        // an M2 iPad Pro or newer, which never runs anything older, so
+        // skipping the recognizer below 16.4 loses nothing on those devices.
+        if #available(iOS 16.4, *) {
+            let hover = UIHoverGestureRecognizer(target: self, action: #selector(hoverChanged(_:)))
+            hover.allowedTouchTypes = [UITouch.TouchType.pencil.rawValue as NSNumber]
+            view.addGestureRecognizer(hover)
+        }
     }
 
     @objc private func hoverChanged(_ gr: UIHoverGestureRecognizer) {
+        guard #available(iOS 16.4, *) else { return }
         guard activePens.isEmpty, let view = hostView else { return }
         guard let n = normalize?(gr.location(in: view)) else { return }
         switch gr.state {

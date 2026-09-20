@@ -17,16 +17,16 @@ struct DiagnosticsLogView: View {
 
     @AppStorage("deviceName") private var deviceName = UIDevice.current.name
     @State private var snapshot: Snapshot = .loading
-    @State private var copied = false
+    @State private var sharing = false
 
     private enum Snapshot {
         case loading
-        /// `text` is the whole snapshot (what the copy button puts on the
-        /// clipboard); `display` is the trimmed version the screen draws. Both
-        /// are computed once at load, because the body re-evaluates on every
-        /// unrelated state change and splitting 256 KB into lines per redraw is
-        /// how a log screen ends up stuttering.
-        case ready(url: URL, text: String, display: String)
+        /// `url` is the whole snapshot file the share sheet hands out;
+        /// `display` is the trimmed version the screen draws, computed once at
+        /// load, because the body re-evaluates on every unrelated state change
+        /// and splitting 256 KB into lines per redraw is how a log screen ends
+        /// up stuttering.
+        case ready(url: URL, display: String)
         case failed
     }
 
@@ -34,35 +34,31 @@ struct DiagnosticsLogView: View {
         content
             .navigationTitle("Connection log")
             .navigationBarTitleDisplayMode(.inline)
+            // Share only: the share sheet already offers Copy. The condition
+            // sits inside the item, because an `if` between ToolbarItems is an
+            // Optional<ToolbarContent> that only conforms on iOS 16.
             .toolbar {
-                if case let .ready(url, text, _) = snapshot {
-                    ToolbarItem(placement: .primaryAction) {
-                        ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            UIPasteboard.general.string = text
-                            copied = true
-                        } label: {
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if case let .ready(url, _) = snapshot {
+                        if #available(iOS 16, *) {
+                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+                        } else {
+                            Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
                         }
-                        .disabled(copied)
                     }
                 }
             }
-            .onAppear { load() }
-            .task(id: copied) {
-                guard copied else { return }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                copied = false
+            .sheet(isPresented: $sharing) {
+                if case let .ready(url, _) = snapshot { ShareSheet(items: [url]) }
             }
+            .onAppear { load() }
     }
 
     @ViewBuilder private var content: some View {
         switch snapshot {
         case .loading:
             ProgressView()
-        case let .ready(_, _, display):
+        case let .ready(_, display):
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
@@ -107,7 +103,7 @@ struct DiagnosticsLogView: View {
                 snapshot = .failed
                 return
             }
-            snapshot = .ready(url: url, text: text, display: displayText(from: text))
+            snapshot = .ready(url: url, display: displayText(from: text))
         }
     }
 
@@ -133,4 +129,13 @@ struct DiagnosticsLogView: View {
             return String(cString: base.assumingMemoryBound(to: CChar.self))
         }
     }
+}
+
+/// `ShareLink` is iOS 16; on iOS 15 the same share sheet comes from UIKit.
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

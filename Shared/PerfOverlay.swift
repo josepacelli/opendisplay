@@ -67,14 +67,16 @@ struct PerfOverlay: View {
                 metric("res", "\(Int(videoSize.width))×\(Int(videoSize.height))")
             }
             // Two graphs side by side where they fit (landscape), stacked
-            // where they don't (portrait).
+            // where they don't (portrait). Without ViewThatFits (iOS 15,
+            // macOS 12) always stack: two 220pt graphs never fit a 320pt or
+            // 375pt phone, and stacking costs nothing on a Mac window.
             if #available(iOS 16, macOS 13, *) {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 14) { graphs }
                     VStack(spacing: 8) { graphs }
                 }
             } else {
-                HStack(spacing: 14) { graphs }
+                VStack(spacing: 8) { graphs }
             }
         }
         .padding(.horizontal, 16)
@@ -116,9 +118,9 @@ struct PerfOverlay: View {
 
 /// Left-aligned wrapping row: children flow onto as many rows as the
 /// proposed width requires. Keeps the perf overlay inside the screen in
-/// portrait instead of clipping off both edges. `Layout` needs macOS 13;
-/// the Mac receiver app runs down to macOS 12, where a plain HStack is
-/// fine because a Mac window is never that narrow.
+/// portrait instead of clipping off both edges. `Layout` needs iOS 16 /
+/// macOS 13; below that an adaptive grid wraps the same way, with fixed
+/// column pitch instead of per-item widths, which is fine for a HUD.
 struct MetricsRow<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -126,7 +128,8 @@ struct MetricsRow<Content: View>: View {
         if #available(iOS 16, macOS 13, *) {
             FlowLayout(hSpacing: 14, vSpacing: 8) { content() }
         } else {
-            HStack(spacing: 14) { content() }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 14, alignment: .leading)],
+                      alignment: .leading, spacing: 8) { content() }
         }
     }
 }

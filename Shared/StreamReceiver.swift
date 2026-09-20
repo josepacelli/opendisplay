@@ -209,6 +209,7 @@ final class StreamReceiver: ObservableObject {
     private(set) var devicePixelsWide = 0
     private(set) var devicePixelsHigh = 0
     var deviceScale: Double = 2
+    private var displayMaxFrameRate = 60
     // Name advertised over Bonjour for the Mac's WiFi picker. iOS 16+ returns
     // a generic "iPhone" from UIDevice.current.name (the user-assigned name
     // needs an entitlement Apple gates behind approval and personal teams
@@ -225,6 +226,10 @@ final class StreamReceiver: ObservableObject {
     // nothing about. nil = advertise nothing (sender streams full size).
     private let maxEncodeWide: Int?
     private let maxEncodeHigh: Int?
+    /// Decoder throughput ceiling advertised in `hello.videoCaps`
+    /// (PROTOCOL.md 6.5). The sender keeps the raster and lowers the frame
+    /// rate to stay under it. nil = advertise none.
+    private var maxPixelsPerSecond: Int?
     /// What to advertise when the user-set service name is empty.
     private let fallbackServiceName: String
 
@@ -291,6 +296,23 @@ final class StreamReceiver: ObservableObject {
         devicePixelsWide = w
         devicePixelsHigh = h
         Log.info("panel changed -> \(w)x\(h) @\(scale)x")
+        if let connection { sendHello(on: connection) }
+    }
+
+    /// Hardware decode budget in encoded pixels per second, for silicon that
+    /// cannot sustain its own panel at 60 fps. Re-sends hello if connected.
+    func setDecodeBudget(maxPixelsPerSecond pixelsPerSecond: Int?) {
+        let value = pixelsPerSecond.map { max(4, $0) }
+        guard value != maxPixelsPerSecond else { return }
+        maxPixelsPerSecond = value
+        if let connection { sendHello(on: connection) }
+    }
+
+    /// Physical presentation ceiling, separate from decoder capability.
+    func setDisplayMaxFrameRate(_ framesPerSecond: Int) {
+        let value = max(1, framesPerSecond)
+        guard value != displayMaxFrameRate else { return }
+        displayMaxFrameRate = value
         if let connection { sendHello(on: connection) }
     }
 
@@ -570,7 +592,11 @@ final class StreamReceiver: ObservableObject {
                 self.pendingConnections.append(conn)
                 conn.stateUpdateHandler = { [weak self] state in
                     guard let self, case .ready = state else { return }
-                    self.sendHello(on: conn)
+                    // This socket has not won the session yet. Keep cursor UDP
+                    // out of its provisional hello: otherwise its flow could
+                    // arrive before adopt(), then be indistinguishable from
+                    // the old session's flow that adopt must retire.
+                    self.sendHello(on: conn, includeCursorPort: false)
                     conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 18) {
                         [weak self] data, _, isComplete, error in
                         guard let self else { return }
@@ -619,9 +645,10 @@ final class StreamReceiver: ObservableObject {
     }
 
     /// Make `conn` the session: replace any existing connection and reset
-    /// decoder state. `greeted` marks a newcomer that already got its hello
-    /// while it proved itself (see the listener), with the bytes it sent
-    /// back in `initialData`; a second hello would make the sender rebuild.
+    /// decoder state. `greeted` marks a newcomer that got a provisional hello
+    /// without the cursor port while it proved itself (see the listener), with
+    /// the bytes it sent back in `initialData`. Once adopted, the full hello
+    /// opens a cursor flow that unambiguously belongs to this session.
     private func adopt(_ conn: NWConnection, greeted: Bool = false, initialData: Data? = nil) {
         if greeted { Log.info("newcomer proved itself — adopting it as the session") }
         connection?.cancel()
@@ -629,6 +656,13 @@ final class StreamReceiver: ObservableObject {
         // The race is decided: rival candidates die here.
         for pending in pendingConnections where pending !== conn { pending.cancel() }
         pendingConnections.removeAll()
+        // UDP cursor flows are scoped to the TCP session that negotiated
+        // them. Retire the old flow before rewinding the sequence floor so an
+        // in-flight datagram from the previous sender cannot establish a high
+        // floor on this fresh session. The listener remains up for the new
+        // sender to open its own flow after hello.
+        cursorConnection?.cancel()
+        cursorConnection = nil
         resetStreamState()
         lastCursorSeq = 0   // the sender restarts its cursor sequence per session
         cursorPortAnnounced = false
@@ -644,7 +678,7 @@ final class StreamReceiver: ObservableObject {
             guard let self else { return }
             self.lastDataReceived = Date()
             self.setConnected(true)
-            if !greeted { self.sendHello(on: conn) }
+            self.sendHello(on: conn)
         }
         conn.stateUpdateHandler = { [weak self] state in
             guard let self, conn === self.connection else { return }   // replaced: stay quiet
@@ -776,6 +810,19 @@ final class StreamReceiver: ObservableObject {
                 let msg = "The OpenDisplay app on your Mac is too old for this \(deviceKind) app. Update OpenDisplay on your Mac to reconnect."
                 DispatchQueue.main.async { self.peerSignal = .updateMac(message: msg) }
             }
+        case WireMessage.streamConfig:
+            // H.264 remains implicit for old senders. New senders announce the
+            // operating point so future codecs never have to be guessed from
+            // the first binary frame.
+            let codec = (obj["codec"] as? String)?.lowercased() ?? "h264"
+            guard codec == "h264" else {
+                Log.info("unsupported stream codec selected: \(codec)")
+                return
+            }
+            let width = obj["width"] as? Int ?? 0
+            let height = obj["height"] as? Int ?? 0
+            let fps = obj["framesPerSecond"] as? Int ?? 0
+            Log.info("stream configuration: H.264 \(width)x\(height) @\(fps)fps")
         case WireMessage.updateRequired:
             // The Mac refuses this pairing until we update from the App Store.
             let message = obj["message"] as? String
@@ -816,7 +863,11 @@ final class StreamReceiver: ObservableObject {
         lastFrameAt = nil
         frameIntervals.removeAll()
         decodeFlushes = 0
-        displayLayer.flush()
+        // The normal AVSampleBufferDisplayLayer path must never inherit the
+        // previous session's last frame. The cursor is a separate channel, so
+        // retaining that image can otherwise look like a live desktop even
+        // when video setup failed.
+        displayLayer.flushAndRemoveImage()
         if let session = decompressionSession {
             VTDecompressionSessionInvalidate(session)
             decompressionSession = nil
@@ -827,7 +878,7 @@ final class StreamReceiver: ObservableObject {
 
     // MARK: - Control messages (phone -> Mac)
 
-    private func sendHello(on conn: NWConnection) {
+    private func sendHello(on conn: NWConnection, includeCursorPort: Bool = true) {
         var hello: [String: Any] = [
             "type": "hello",
             "pixelsWide": devicePixelsWide,
@@ -836,10 +887,21 @@ final class StreamReceiver: ObservableObject {
             "device": deviceKind,
             "id": Self.installID,
             "pv": WireProtocol.version,   // issue #132 — absent on old receivers
+            "displayMaxFrameRate": displayMaxFrameRate,
         ]
+        // Additive joint capability. The legacy rectangle below stays on the
+        // wire while independently updated senders remain in the field.
+        var h264: [String: Any] = ["codec": "h264", "maxFrameRate": 60]
+        if let maxEncodeWide, let maxEncodeHigh {
+            h264["maxWidth"] = maxEncodeWide
+            h264["maxHeight"] = maxEncodeHigh
+        }
+        if let maxPixelsPerSecond { h264["maxPixelsPerSecond"] = maxPixelsPerSecond }
+        hello["videoCaps"] = [h264]
         // Additive capability: only offered while the UDP listener is bound,
         // so a sender never dials a port nobody answers on.
-        if cursorListenerReady { hello["cursorPort"] = Int(cursorPort) }
+        let announcesCursorPort = includeCursorPort && cursorListenerReady
+        if announcesCursorPort { hello["cursorPort"] = Int(cursorPort) }
         // Additive: decode ceiling (PROTOCOL.md 6.5) — ask for the full
         // desktop but a stream no larger than this machine can decode.
         if let maxEncodeWide, let maxEncodeHigh {
@@ -858,9 +920,11 @@ final class StreamReceiver: ObservableObject {
         let addrs = advertisesAddresses ? Self.reachableAddresses() : []
         if !addrs.isEmpty { hello["addrs"] = addrs }
         lastAdvertisedAddrs = addrs
-        cursorPortAnnounced = cursorListenerReady
+        // A provisional hello goes to a candidate while the old connection is
+        // still active; it must not change bookkeeping for that live session.
+        if connection === conn { cursorPortAnnounced = announcesCursorPort }
         sendControl(hello, on: conn)
-        Log.info("hello sent\(cursorListenerReady ? " (cursorPort \(cursorPort))" : "")")
+        Log.info("hello sent\(announcesCursorPort ? " (cursorPort \(cursorPort))" : "")")
     }
 
     /// Every IP address of an up, non-loopback interface, for hello.addrs.
@@ -1060,7 +1124,7 @@ final class StreamReceiver: ObservableObject {
             }
         }
         if formatDesc == nil, let sps, let pps {
-            displayLayer.flush()   // drop any frames from the previous format
+            displayLayer.flushAndRemoveImage()   // drop the previous format's last image
             buildFormatDescription(sps: sps, pps: pps)
         }
         guard !vclNALUs.isEmpty else { return }

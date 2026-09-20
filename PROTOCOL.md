@@ -247,7 +247,7 @@ Coordinates use the conventions of section 7.
 
 | `type` | Since | Fields | Purpose |
 |---|---|---|---|
-| `hello` | pv 1 | `pixelsWide`, `pixelsHigh`, `scale`, `device`?, `id`?, `pv`? | Identify the panel; (re)sent on connect and on rotation |
+| `hello` | pv 1 | `pixelsWide`, `pixelsHigh`, `scale`, `device`?, `id`?, `pv`?, `displayMaxFrameRate`?, `videoCaps`? | Identify the panel and receiver video capabilities; (re)sent on connect and on rotation |
 | `ping` | pv 1 | `t` | Liveness + clock sync probe |
 | `touch` | pv 1 | `phase`, `x`, `y`, `t`? | Finger input |
 | `scroll` | pv 1 | `dx`, `dy` | Two-finger scroll |
@@ -286,6 +286,12 @@ nothing before it arrives.
 * `maxEncodeWide` / `maxEncodeHigh` (int, optional): the receiver's decode
   ceiling in pixels (section 6.5) — the largest stream it can sustain,
   independent of the panel size it announced. Additive at `pv` 3, no bump.
+* `displayMaxFrameRate` (int, optional): the highest rate the physical display
+  can present. This is a display fact, not a decoder guarantee. Absent means
+  the legacy sender default of 60 FPS.
+* `videoCaps` (array, optional): codec-specific decoder/presentation envelopes
+  (section 6.5). Absent means the legacy H.264 contract. Additive at `pv` 3,
+  no bump.
 
 A receiver MUST re-send `hello` on the live connection whenever its
 announced dimensions change (rotation). The sender rebuilds the display in
@@ -352,6 +358,7 @@ section 4.
 | `cursorImg` | pv 1 | `nw`, `nh`, `ax`, `ay`, `png` | Cursor sprite |
 | `welcome` | pv 2 | `pv`, `min` | Sender's side of the version handshake |
 | `updateRequired` | pv 2 | `target`, `store`, `message` | Peer must update to continue |
+| `streamConfig` | pv 3 (additive) | `codec`, `width`, `height`, `framesPerSecond` | Selected video operating point |
 
 **`pong`** echoes the `t` from the receiver's `ping` unchanged and adds
 `mt`: milliseconds since the Unix epoch on the sender's clock at the moment
@@ -483,7 +490,42 @@ block its own UI. At `pv` 3 this is only sent when
 machinery exists so a future floor raise degrades into a clear message
 instead of a silent failure.
 
-### 6.5 Decode ceiling (`hello.maxEncodeWide` / `maxEncodeHigh`)
+**`streamConfig`** announces the sender's selected video configuration before
+the first video frame and again after a reconnect or stream reconfiguration.
+`codec` is a lowercase token (`"h264"` today); `width` and `height` are encoded
+pixels; `framesPerSecond` is the maximum submission rate. Receivers MUST ignore
+unknown fields. A receiver that gets video without `streamConfig` MUST assume
+the legacy H.264 stream. A sender MUST NOT select a non-H.264 codec unless the
+receiver affirmatively advertised it in `videoCaps`.
+
+### 6.5 Video capabilities and legacy decode ceiling
+
+Each `hello.videoCaps` entry is an object with a required lowercase `codec`
+token and these optional positive integer limits:
+
+| Field | Meaning |
+|---|---|
+| `maxWidth`, `maxHeight` | Maximum encoded raster for that entry |
+| `maxFrameRate` | Maximum stream rate for that entry |
+| `maxPixelsPerSecond` | Maximum encoded pixel throughput for that entry |
+
+All limits present in one entry apply **together**. Multiple entries for the
+same codec are alternative supported envelopes; they are not maxima that may
+be freely combined. Unknown codecs and fields MUST be ignored. The sender
+intersects a receiver entry with its own encoder constraints and the requested
+desktop/quality policy, then reports the result with `streamConfig`.
+
+The official receiver currently advertises H.264 only. This structure makes a
+future codec additive without changing the meaning of panel dimensions or
+assuming support from a peer that merely ignored an unknown field.
+
+The current H.264 sender also enforces the High@L5.2 frame-size and
+macroblock-rate limits locally. For a 16:9 5K source that codec rule selects
+4096×2304 at 55 FPS; it is not a receiver-model or 5K-iMac exception. A future
+codec supplies its own encoder constraints while using the same capability
+intersection and `streamConfig` announcement.
+
+`hello.maxEncodeWide` / `maxEncodeHigh` is the legacy H.264 decode ceiling:
 
 `hello.pixelsWide/High` sets the desktop size, and without further
 information it also sets the stream size — but a big panel says nothing
@@ -503,6 +545,11 @@ nothing, and a receiver that omits the fields gets the previous
 behavior (stream size follows the announced pixels and the sender's
 quality setting). Derive advertised ceilings from measured playback: a
 decode session that merely creates successfully proves nothing.
+
+During migration, a receiver MAY send both the legacy ceiling and
+`videoCaps`. A sender that understands both MUST satisfy both. Receiver limits
+do not replace sender validation: the sender must independently keep its H.264
+raster and rate within the selected encoder's constraints.
 
 ## 7. Coordinate spaces and units
 
@@ -641,6 +688,7 @@ Mechanics at a glance (the policy behind them lives in COMPATIBILITY.md):
 | 2 | Version handshake: `pv` in `hello` and TXT, `welcome`, `updateRequired`, `sleeping`, `closing` |
 | 3 | `pencil`, `proximity`; below pv 3 the receiver degrades stylus to `touch` |
 | 3 (additive) | `hello.cursorPort` and the UDP cursor side channel (6.3); optional, no bump |
+| 3 (additive) | `hello.videoCaps`, `displayMaxFrameRate`, and `streamConfig` (6.5); legacy peers remain implicit H.264 |
 | 4 (reserved) | Typed frame header replacing the section 4 demux heuristic (two-phase migration) |
 
 ---
